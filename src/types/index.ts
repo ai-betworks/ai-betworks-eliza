@@ -14,13 +14,15 @@ export interface AgentRole {
   chain_id?: number;
 }
 
-export interface PVPVAISettings {
+export type PVPVAISettings = {
   pvpvaiServerUrl: string;
   type: "GM" | "AGENT";
   agentId: number;
   ethWalletAddress?: string; // === eth_wallet_address
   solanaWalletAddress?: string; // solana_wallet_address
   creatorId: number; // Changed from string to number to match DB schema
+  clientHost?: string; //Default is 0.0.0.0
+  clientPort?: number; //Default is 3001
 }
 
 export interface Environment {

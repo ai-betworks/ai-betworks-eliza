@@ -1,67 +1,42 @@
+import { ethers } from "ethers";
 import { supabase } from "../index.ts";
 import type {
   ExtendedAgentRuntime,
   Character as ExtendedCharacter,
 } from "../types/index.ts";
 import { AgentClient } from "./AgentClient.ts";
-import { GameMasterClient } from "./GameMasterClient.ts";
+export const HARDCODED_ROOM_ID = Number(process.env.ROOM_ID) || 290;
 
-const HARDCODED_ROOM_ID = Number(process.env.ROOM_ID) || 290;
-export interface Config {
-  endpoint: string;
+export interface ClientInitializationConfig {
+  pvpvaiUrl: string;
   walletAddress: string;
   creatorId: number;
-  agentId?: number;
-  port: number;
-  privateKey?: string;
-  roomId?: number; // roundid is doen in backend
+  agentId: number;
+  privateKey: string;
+  roomId?: number;
 }
-
-// Configuration for different agents
-export const AGENT_CONFIGS = {
-  GAMEMASTER: {
-    port: 3330,
-    endpoint: process.env.BACKEND_URL || "http://localhost:3000",
-    roomId: Number(process.env.ROOM_ID) || 290,
-  },
-  AGENT1: {
-    port: 3331,
-    endpoint: process.env.BACKEND_URL || "http://localhost:3000",
-    roomId: Number(process.env.ROOM_ID) || 290,
-  },
-  AGENT2: {
-    port: 3332,
-    endpoint: process.env.BACKEND_URL || "http://localhost:3000",
-    roomId: Number(process.env.ROOM_ID) || 290,
-  },
-  AGENT3: {
-    port: 3333,
-    endpoint: process.env.BACKEND_URL || "http://localhost:3000",
-    roomId: Number(process.env.ROOM_ID) || 290,
-  },
-  AGENT4: {
-    port: 3334,
-    endpoint: process.env.BACKEND_URL || "http://localhost:3000",
-    roomId: Number(process.env.ROOM_ID) || 290,
-  },
-};
 
 export class PVPVAIIntegration {
   private client: AgentClient;
   private runtime: ExtendedAgentRuntime;
   private agentId: number;
-  private privateKey: string;
+  private pvpvaiUrl: string;
+  private roomId: number = HARDCODED_ROOM_ID; //Temporarily hardcoded
+  private port: number;
+  private wallet: ethers.Wallet;
 
-  constructor(runtime: ExtendedAgentRuntime, config: Config) {
+  constructor(
+    runtime: ExtendedAgentRuntime,
+    config: ClientInitializationConfig
+  ) {
     this.runtime = runtime;
     const char = runtime.character as unknown as ExtendedCharacter;
-    const isGM = char.agentRole?.type.toUpperCase() === "GM";
 
     const walletAddress =
       char.settings?.pvpvai?.ethWalletAddress || config.walletAddress;
     if (!walletAddress) {
       throw new Error(
-        "No eth_wallet_address found in character settings or config"
+        "No ethWalletAddress found in character settings or config"
       );
     }
 
@@ -71,29 +46,40 @@ export class PVPVAIIntegration {
     }
     this.agentId = agentId;
 
-    const privateKeyEnv = `AGENT_${agentId}_PRIVATE_KEY`;
-    const privateKey = process.env[privateKeyEnv] || config.privateKey;
-    if (!privateKey) {
-      throw new Error(`${privateKeyEnv} not found in environment variables`);
-    }
-    this.privateKey = privateKey;
-
-    const pvpvaiUrl = char.settings?.pvpvai?.pvpvaiServerUrl || config.endpoint;
+    this.pvpvaiUrl = char.settings?.pvpvai?.pvpvaiServerUrl || config.pvpvaiUrl;
   }
 
   public async initialize(): Promise<void> {
-    const agentConfig = this.getAgentConfig(this.agentId);
+    const agentConfig = await this.getAgentConfig(this.agentId);
+
+    //TODO I think we  load the wallet somewhere else too, code smell
+    const privateKeyEnv = `AGENT_${this.agentId}_PRIVATE_KEY`;
+    const privateKey = process.env[privateKeyEnv];
+    if (!privateKey) {
+      throw new Error(`${privateKeyEnv} not found in environment variables`);
+    }
+    const wallet = new ethers.Wallet(privateKey);
+
+    if (
+      agentConfig.eth_wallet_address.toLowerCase() !==
+      wallet.address.toLowerCase()
+    ) {
+      throw new Error(
+        `Client side private key did not resolve to the same address as we have registered 
+        with the server for agent ${this.agentId} (also checked AGENT_${this.agentId}_PRIVATE_KEY). 
+        Expected ${agentConfig.eth_wallet_address}, got ${wallet.address}`
+      );
+    }
 
     this.client = new AgentClient(
       this.runtime,
-      config.endpoint,
-      walletAddress,
-      agentId,
-      roomId,
-      config.port || agentConfig.port
+      this.pvpvaiUrl,
+      wallet,
+      this.agentId
     );
+
     // Connect to room - backend will handle round assignment
-    await this.client.setRoomAndRound(roomId);
+    await this.client.initializeRoomContext(this.roomId);
   }
 
   private async getAgentConfig(agentId?: number) {
@@ -109,19 +95,6 @@ export class PVPVAIIntegration {
     return agent;
   }
 
-  public async sendAIMessage(text: string): Promise<void> {
-    try {
-      if (this.client instanceof GameMasterClient) {
-        await this.client.broadcastToRoom({ text });
-      } else {
-        await this.client.sendAIMessage({ text });
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      throw error;
-    }
-  }
-
   public getClient() {
     return this.client;
   }
@@ -134,7 +107,7 @@ export class PVPVAIIntegration {
 // Factory function to create PVPVAIIntegration
 export const createPVPVAIClient = (
   runtime: ExtendedAgentRuntime,
-  config: Config
+  config: ClientInitializationConfig
 ): PVPVAIIntegration => {
   return new PVPVAIIntegration(runtime, config);
 };

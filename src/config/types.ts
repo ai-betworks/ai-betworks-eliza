@@ -1,5 +1,4 @@
 import { UUID } from '@elizaos/core';
-import { PvpAllPvpActionsType } from '../types/schemas';
 
 export type PvPActionType = 'Silence' | 'Deafen' | 'Attack' | 'Poison';
 
@@ -21,12 +20,6 @@ export interface MessageHistoryEntry {
   agentId: number;
   agentName: string;
   text: string;
-}
-
-export interface BroadcastContent {
-  text: string;
-  roundId: number;
-  pvpAction?: PvpAllPvpActionsType;
 }
 
 export interface AgentMessage extends BaseMessage {

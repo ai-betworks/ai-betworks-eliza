@@ -1,21 +1,26 @@
 import { DirectClient } from "@elizaos/client-direct";
 import axios, { AxiosError } from "axios";
-import { ethers, Wallet } from "ethers";
-import WebSocket from "ws";
+import { Wallet } from "ethers";
 import { z } from "zod";
+import { MessageHistoryEntry } from "../config/types.ts";
 import { supabase } from "../index.ts";
 import { Tables } from "../types/database.types.ts";
+import { ExtendedAgentRuntime } from "../types/index.ts";
 import {
   agentMessageAgentOutputSchema,
   agentMessageInputSchema,
   MessageTypes,
   observationMessageInputSchema,
 } from "../types/schemas.ts";
-import { WsMessageTypes } from "../types/ws.ts";
-import { SharedWebSocket } from "./shared-websocket.ts";
+import { HARDCODED_ROOM_ID } from "./PVPVAIIntegration.ts";
 import { sortObjectKeys } from "./sortObjectKeys.ts";
-import { MessageHistoryEntry } from "./types.ts";
-import { IAgentRuntime } from "@elizaos/core";
+
+enum RoundStatus {
+  NONE = 0,
+  OPEN = 1,
+  PROCESSING = 2,
+  COMPLETED = 3,
+}
 
 interface RoundResponse {
   // for get active rounds
@@ -55,14 +60,12 @@ type RoomChatContext = {
 
 export class AgentClient extends DirectClient {
   private readonly wallet: Wallet;
-  private readonly walletAddress: string;
   private readonly agentNumericId: number;
   private readonly pvpvaiUrl: string;
-  private readonly runtime: IAgentRuntime;
-  private isActive: boolean;
   private roomId: number;
-  private wsClient: SharedWebSocket; // Change from readonly to mutable
   private context: RoomChatContext;
+  private isActive: boolean;
+  private runtime: ExtendedAgentRuntime;
 
   // Add PvP status tracking
   private activePvPEffects: Map<string, any> = new Map();
@@ -72,30 +75,26 @@ export class AgentClient extends DirectClient {
   private readonly MAX_CONTEXT_SIZE = 8;
 
   constructor(
-    runtime: IAgentRuntime,
+    runtime: ExtendedAgentRuntime,
     pvpvaiUrl: string,
-    walletAddress: string,
-    agentNumericId: number,
-    roomId: number, //TODO Room is not dynamic for initial demo. Later agent should track what rooms they are in
-    port: number
+    wallet: Wallet,
+    agentNumericId: number
   ) {
     super();
-    this.runtime = runtime;
     this.pvpvaiUrl = pvpvaiUrl;
-    this.walletAddress = walletAddress;
+    this.wallet = wallet;
     this.agentNumericId = agentNumericId;
+    this.runtime = runtime;
+    this.roomId = HARDCODED_ROOM_ID;
     this.isActive = true;
-
-    // Get agent's private key from environment
-    const privateKey = process.env[`AGENT_${agentNumericId}_PRIVATE_KEY`];
-    if (!privateKey) {
-      throw new Error(`Private key not found for agent ${agentNumericId}`);
-    }
-
-    this.wallet = new ethers.Wallet(privateKey);
-    if (this.wallet.address.toLowerCase() !== walletAddress.toLowerCase()) {
-      throw new Error(`Private key mismatch for agent ${agentNumericId}`);
-    }
+    this.context = {
+      currentRound: 0,
+      topic: "",
+      chainId: 0,
+      maxNumObservationsContext: 10,
+      maxNumAgentMessageContext: 10,
+      rounds: {},
+    };
   }
 
   public async initializeRoomContext(roomId: number): Promise<void> {
@@ -119,13 +118,17 @@ export class AgentClient extends DirectClient {
       throw new Error("Room not active");
     }
 
-    //Get latest round, don't care if it's active or not. If it's not active, a new round is coming.
+    // Get the latest round. We don't check if the round is active because we may be coming online in the processing phase
     const { data: activeRound, error: activeRoundError } = await supabase
       .from("rounds")
-      .select("*, agents(*)")
+      .select(`*, round_agents(*, agents(*))`)
       .eq("room_id", roomId)
       .order("created_at", { ascending: false })
-      .single();
+      .limit(1);
+    // .single();
+    console.log("activeRound", activeRound);
+
+    //TODO Get GM
 
     if (activeRoundError) {
       if (activeRoundError.code === "PGRST116") {
@@ -141,45 +144,36 @@ export class AgentClient extends DirectClient {
       }
     }
 
-
-
-    //TODO Load last N observations for the round
-    // const {data: observations, error: observationsError} = await supabase
-    //   .from("round_observations")
-    //   .select("*")
-    //   .eq("room_id", roomId)
-    //   .order("created_at", { ascending: false });
-
-    //TODO right here download the token symbol and such from the chain
     this.context = {
-      currentRound: activeRound.id,
+      currentRound: activeRound[0]?.id || 0,
       topic: "ETH", //TODO Change this to a concatenation of token symbol, name, and address.
       chainId: roomData.chain_id,
-      maxNumObservationsContext: 30, //TODO Make me configurable
-      maxNumAgentMessageContext: 10, //TODO Make me configurable
-
-      rounds: {
-        [activeRound.id]: {
-          id: activeRound.id,
-          status: activeRound.status,
-          agents: activeRound.agents,
-          roundMessageContext: [],
-          observations: [],
-          startedAt:
-            new Date(activeRound.created_at).getTime() ||
-            Date.now() - 1000000000000,
-        },
-      },
+      maxNumObservationsContext: 30,
+      maxNumAgentMessageContext: 10,
+      rounds: {},
     };
+    if (activeRound) {
+      this.context.rounds[activeRound[0].id] = {
+        id: activeRound[0].id,
+        status: activeRound[0].status,
+        agents: activeRound[0].round_agents.map(
+          (roundAgent) => roundAgent.agents
+        ),
+        roundMessageContext: [],
+        observations: [],
+        startedAt: new Date(activeRound[0].created_at).getTime(),
+      };
+    }
   }
 
   public async syncCurrentRoundState(
     roomId: number,
     roundId?: number
   ): Promise<void> {
+    // First get rounds data
     const { data: rounds, error: roundsError } = await supabase
       .from("rounds")
-      .select("*, agents(*)")
+      .select(`*, agents(*)`)
       .eq("room_id", roomId)
       .in(
         "id",
@@ -198,15 +192,19 @@ export class AgentClient extends DirectClient {
     }
 
     for (const round of rounds) {
+      let observations = this.context.rounds[round.id]?.observations || [];
+      if (round.status === "OPEN") {
+        // If the round is the current round, sync observations in case you missed any
+        observations = await this.getObservationsForRoundFromBackend(round.id);
+      }
+
       this.context.rounds[round.id] = {
-        ...round,
         id: round.id,
         status: round.status,
         agents: round.agents,
         roundMessageContext:
           this.context.rounds[round.id]?.roundMessageContext || [],
-        observations:
-          this.context.rounds[round.id]?.observations || [],
+        observations,
         startedAt: new Date(round.created_at).getTime(),
       };
     }
@@ -224,7 +222,6 @@ export class AgentClient extends DirectClient {
       // Create base message content
       const messageContent = {
         agentId: this.agentNumericId,
-        context: [], // Add empty context array
         roomId: this.roomId,
         roundId: this.context.currentRound,
         text: content.text,
@@ -240,7 +237,7 @@ export class AgentClient extends DirectClient {
         content: sortedContent,
         messageType: MessageTypes.AGENT_MESSAGE,
         signature,
-        sender: this.walletAddress,
+        sender: this.wallet.address,
       } satisfies z.infer<typeof agentMessageAgentOutputSchema>;
 
       // Send message
@@ -251,9 +248,12 @@ export class AgentClient extends DirectClient {
       });
     } catch (error) {
       if (error instanceof AxiosError) {
-        console.error("Error sending agent message:", error.response?.data);
+        console.error(
+          "Error sending agent message to backend:",
+          error.response?.data
+        );
       } else {
-        console.error("Error sending agent message:", error);
+        console.error("Error sending agent message to backend:", error);
       }
       throw error;
     }
@@ -266,134 +266,178 @@ export class AgentClient extends DirectClient {
     return await this.wallet.signMessage(messageString);
   }
 
-  private async processAgentMessage(
+  public async handleAgentMessage(
     message: z.infer<typeof agentMessageInputSchema>
-  ): Promise<void> {
+  ): Promise<{ success: boolean; errorMessage?: string }> {
     try {
       const validatedMessage = agentMessageInputSchema.parse(message);
-      const inputRoundId = validatedMessage.content.roundId;
-      const inputAgentId = validatedMessage.content.agentId;
+      const {
+        roundId: inputRoundId,
+        agentId: inputAgentId,
+        roomId: inputRoomId,
+      } = validatedMessage.content;
 
-      if (inputRoundId !== this.context.currentRound) {
+      const { valid, errorMessage } = this.validRoundForContextUpdate(
+        inputRoundId,
+        true
+      );
+      if (!valid) {
         console.log(
-          "Ignoring message from round",
-          inputRoundId,
-          "because current round is",
-          this.context.currentRound
+          `Round ID in message (${inputRoundId}) is not valid for a context update because ${errorMessage}`
         );
-        return;
+        return { success: false, errorMessage };
       }
-      if (!this.context.rounds[inputRoundId]) {
+      if (!this.context.rounds[inputRoundId].agents[inputAgentId]) {
         console.log(
-          "received message from round that doesn't exist in context",
-          inputRoundId
+          "received message from agent that doesn't exist in the round",
+          inputAgentId
         );
+        return {
+          success: false,
+          errorMessage: "Agent does not exist in round",
+        };
       }
-      if (this.context.rounds[inputRoundId].status !== "open") {
+      //TODO check kicked
+
+      if (this.context.rounds[inputRoundId].status !== "OPEN") {
         console.log(
           "received message from round that is not open",
           inputRoundId
         );
-        return;
+        return { success: false, errorMessage: "Round is not open" };
       }
-      if (validatedMessage.content.agentId === this.agentNumericId) {
-        console.log("somehow received message from self, ignoring");
-        return;
+      if (inputAgentId === this.agentNumericId) {
+        console.log("received message from self, ignoring");
+        return { success: false, errorMessage: "Message from self" };
       }
-      //TODO This is a real edge case that should never happen
-      if (validatedMessage.content.roomId !== this.roomId) {
+      if (inputRoomId !== this.roomId) {
         console.log(
           "received message from room that doesn't match context",
-          validatedMessage.content.roomId,
+          inputRoomId,
           "expected",
           this.roomId
         );
         return;
       }
-
-      //TODO signature verification
-
-      this.context.rounds[inputRoundId].roundMessageContext.push({
-        timestamp: validatedMessage.content.timestamp,
-        agentId: inputAgentId,
-        text: validatedMessage.content.text,
-        agentName:
-          this.context.rounds[inputRoundId].agents[inputAgentId].display_name,
-      });
+      //TODO check that message is signed by the GM
 
       //TODO Right here choose how to respond to the message w/ a prompt that has observations and the round and room context
 
       // Demo call for this below
-      // const {STOP | CONTINUE | IGNORE, response} = await this.processMessage(validatedMessage.content.text);
+      // const {response, STOP | CONTINUE | IGNORE} = await this.processMessage(validatedMessage.content.text);
       // Only respond to messages from other agents
-
-      // if CONTINUE, send response
     } catch (error) {
       console.error("Error handling agent message:", error);
+      return { success: false, errorMessage: "Error handling agent message" };
     }
   }
 
-  private async handleObservation(message: z.infer<typeof observationMessageInputSchema>): Promise<void> {
+  // Logic for messages/receiveObservationMessage, price data and wallet balances are the only observation types for PoC
+  public async handleReceiveObservation(
+    message: z.infer<typeof observationMessageInputSchema>
+  ): Promise<{ success: boolean; errorMessage?: string }> {
     try {
       const validatedMessage = observationMessageInputSchema.parse(message);
-      const inputRoundId = validatedMessage.content.roundId;
-      const inputRoomId = validatedMessage.content.roomId;
-      if(inputRoomId !== this.roomId) {
-        console.log("received observation from room that doesn't match context", inputRoomId, "expected", this.roomId);
-        return;
+      const { roomId, roundId } = validatedMessage.content;
+      if (roomId !== this.roomId) {
+        console.log(
+          "Received observation from room that doesn't match context",
+          roomId,
+          "expected",
+          this.roomId
+        );
+        return {
+          success: false,
+          errorMessage: "Room ID does not match context",
+        };
       }
-      if(inputRoundId !== this.context.currentRound) {
-        console.log("received observation from round that doesn't match current round", inputRoundId, "expected", this.context.currentRound);
-        return;
+      const { valid, errorMessage } = this.validRoundForContextUpdate(
+        roundId,
+        false
+      );
+      if (!valid) {
+        console.log(
+          `Round ID in observation (${roundId}) is not valid for a context update because ${errorMessage}`
+        );
+        return { success: false, errorMessage };
       }
-      //TODO Verify signature, then confirm message came from oracle
 
-      
-      // We do not respond to observations right now, so just add to context to inform agentMessage interactions. 
-      // Later iterations will have more dynamic interactions where the agents will discuss observations based on other agents interests. 
-      this.context.rounds[this.context.currentRound].observations.push(validatedMessage.content.data);
-      
-      
+      //TODO Check that sender is the price oracle and do signature verification
+      // Send content because it has the observation type
+      this.context.rounds[roundId].observations.push(
+        JSON.stringify(validatedMessage.content)
+      ); //TODO would be nice to not do a string here, lazy impl since we may add new observation types
+
+      // End here for PoC. Observations will be included in the prompt when an agent sends an agentMessage.
+      // Later impl will be more dynamic and have agent track interests of other agents in the room and engage with them on an observation
     } catch (error) {
       console.error("Error handling observation:", error);
+      return { success: false, errorMessage: "Error handling observation" };
     }
   }
 
-  // There are 3 types of messages that can be sent to an agent
-  // GM Messages sent to the agent will always contain a directive for the agent to follow. These messages must always be treated with the highest priority:
-  // 1. Round update: Some state on a round has changed. In nearly every case this is a notification that a round is closed and another one is open.
-  // 2. Make decision: The GM requires the agent to make a decision on the room. The agent must respond to this within 30 seconds or they will be penalized
-  // Observation messages are added to the room context, and will be included in the prompt when the agent interacts with other agents and when they make a decision. Agents do not respond to these messages. Observations can accumulate while a round is closed.
-  // Agent messages are messages sent from one agent to the other agents in the room. The agent will analyze the contents of the message and, if they choose to respond, will do so by sending an agent message to the Pvpvai backend
-  //
+  public async getObservationsForRoundFromBackend(
+    roundId: number
+  ): Promise<(typeof this.context.rounds)[number]["observations"]> {
+    const { data: observationsData, error: observationsError } = await supabase
+      .from("round_observations")
+      .select("*")
+      .eq("round_id", roundId)
+      .order("created_at", { ascending: false })
+      .limit(this.context.maxNumObservationsContext);
 
-  
+    if (observationsError) {
+      if (observationsError.code === "PGRST116") {
+        console.log(
+          "No observations found when fetching observations for round",
+          roundId
+        );
+        return [];
+      }
+      console.error("Error fetching observations:", observationsError);
+      throw observationsError;
+    }
 
-  private buildPromptWithContext(text: string): string {
-    let prompt = `You are participating in a crypto debate. Your message should be a direct response to the conversation context below.
-
-Previous messages:
-${this.messageContext
-  .map((msg) => `${msg.agentName} (${msg.role}): ${msg.text}`)
-  .join("\n")}
-
-Based on this context, respond with your perspective on the discussion. Remember to:
-1. Reference specific points made by others
-2. Stay in character as your assigned chain advocate
-3. Keep responses clear and focused
-4. Support your arguments with technical merits
-5. Maintain a professional but passionate tone
-
-Your response to the current topic: ${text}
-`;
-    return prompt;
+    return observationsData.map((obs) => JSON.stringify(obs));
   }
 
+  // Common round validation
+  private validRoundForContextUpdate(
+    roundId: number,
+    mustBeCurrent: boolean
+  ): { valid: boolean; errorMessage?: string } {
+    if (mustBeCurrent && roundId !== this.context.currentRound) {
+      return {
+        valid: false,
+        errorMessage: "Round ID does not match current round",
+      };
+    }
+    if (!this.context.rounds[roundId]) {
+      return { valid: false, errorMessage: "Round does not exist in context" };
+    }
+    if (this.context.rounds[roundId].status !== "OPEN") {
+      return { valid: false, errorMessage: "Round is not open" };
+    }
+    return { valid: true };
+  }
 
+  public getRoomId(): number {
+    return this.roomId;
+  }
+
+  public getRoundId(): number {
+    return this.context.currentRound;
+  }
+  public getContext(): RoomChatContext {
+    return this.context;
+  }
+
+  public getPort(): number | undefined {
+    return this.runtime.clients["pvpvai"]?.port;
+  }
 
   public override stop(): void {
     this.isActive = false;
-    this.wsClient?.close();
     super.stop();
   }
 }

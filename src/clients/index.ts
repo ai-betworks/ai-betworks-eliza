@@ -5,10 +5,9 @@ import { TwitterClientInterface } from "@elizaos/client-twitter";
 import { IAgentRuntime } from "@elizaos/core";
 import { Character } from "../types/index.ts";
 
-
 /**
  * Initializes all configured clients for an agent runtime
- * 
+ *
  * @param character - Agent character configuration
  * @param runtime - Agent runtime instance
  * @returns Array of initialized clients
@@ -19,7 +18,7 @@ export async function initializeClients(
 ) {
   // Initialize clients object on runtime if it doesn't exist
   runtime.clients = runtime.clients || {};
-  
+
   // Track all initialized clients
   const clients = [];
 
@@ -31,7 +30,7 @@ export async function initializeClients(
     const autoClient = await AutoClientInterface.start(runtime);
     if (autoClient) {
       clients.push(autoClient);
-      runtime.clients['auto'] = autoClient;
+      runtime.clients["auto"] = autoClient;
     }
   }
 
@@ -40,7 +39,7 @@ export async function initializeClients(
     const discordClient = await DiscordClientInterface.start(runtime);
     if (discordClient) {
       clients.push(discordClient);
-      runtime.clients['discord'] = discordClient;
+      runtime.clients["discord"] = discordClient;
     }
   }
 
@@ -49,7 +48,7 @@ export async function initializeClients(
     const telegramClient = await TelegramClientInterface.start(runtime);
     if (telegramClient) {
       clients.push(telegramClient);
-      runtime.clients['telegram'] = telegramClient;
+      runtime.clients["telegram"] = telegramClient;
     }
   }
 
@@ -58,11 +57,9 @@ export async function initializeClients(
     const twitterClient = await TwitterClientInterface.start(runtime);
     if (twitterClient) {
       clients.push(twitterClient);
-      runtime.clients['twitter'] = twitterClient;
+      runtime.clients["twitter"] = twitterClient;
     }
   }
-
-  
 
   // Initialize plugin clients if any
   if (character.plugins?.length > 0) {
@@ -87,20 +84,19 @@ export async function initializeClients(
   }
 
   // Log initialized clients
-  console.log('Initialized clients for', character.name, ':', {
+  console.log("Initialized clients for", character.name, ":", {
     total: clients.length,
-    types: Object.keys(runtime.clients)
+    types: Object.keys(runtime.clients),
   });
 
   return clients;
 }
 
 // Export additional components
-export { AgentClient } from './AgentClient.ts';
-export { 
-  PVPVAIIntegration,
+export { AgentClient } from "./AgentClient.ts";
+export {
   createPVPVAIClient,
-  AGENT_CONFIGS,
-  type Config
-} from './PVPVAIIntegration.ts';
-export { SharedWebSocket, type WebSocketConfig } from './shared-websocket.ts'; 
+  PVPVAIIntegration,
+  type ClientInitializationConfig as Config,
+} from "./PVPVAIIntegration.ts";
+// export { SharedWebSocket, type WebSocketConfig } from "./shared-websocket.ts";

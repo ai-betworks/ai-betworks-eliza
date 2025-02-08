@@ -4,28 +4,30 @@ import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
 import { createNodePlugin } from "@elizaos/plugin-node";
 import { solanaPlugin } from "@elizaos/plugin-solana";
 import { createClient } from "@supabase/supabase-js";
+import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initializeDbCache } from "./cache/index.ts";
 import { character } from "./character.ts";
-import {
-  AGENT_CONFIGS,
-  createPVPVAIClient,
-} from "./clients/PVPVAIIntegration.ts";
+import { createPVPVAIClient } from "./clients/PVPVAIIntegration.ts";
 import {
   getTokenForProvider,
   loadCharacters,
   parseArguments,
 } from "./config/index.ts";
 import { initializeDatabase } from "./database/index.ts";
-import { DebateOrchestrator } from "./DebateOrchestrator.ts";
 import { Database } from "./types/database.types.ts";
 import type {
   Character,
   ExtendedAgentRuntime,
   Character as ExtendedCharacter,
 } from "./types/index.ts";
+import {
+  agentMessageInputSchema,
+  gmMessageInputSchema,
+  observationMessageInputSchema,
+} from "./types/schemas.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,12 +83,6 @@ export function createAgent(
 
   // Add chat interface to runtime
 
-  const pvpSettings = extendedChar.settings?.pvpvai;
-  if (pvpSettings) {
-    runtime.roomId = pvpSettings.roomId;
-    runtime.creatorId = Number(pvpSettings.creatorId);
-  }
-
   return runtime;
 }
 
@@ -116,38 +112,22 @@ async function startAgent(
     runtime.clients = {};
 
     if (extendedChar.settings?.pvpvai) {
-      const isGM = extendedChar.agentRole?.type.toUpperCase() === "GM";
-
       try {
-        console.log(
-          `Initializing ${isGM ? "GM" : "Agent"} for ${
-            extendedChar.name
-          } with role ${extendedChar.agentRole?.type}`
-        );
-
-        // Get port based on role
-        const portConfig = isGM
-          ? AGENT_CONFIGS.GAMEMASTER
-          : extendedChar.settings.pvpvai.agentId === 50
-          ? AGENT_CONFIGS.AGENT1
-          : extendedChar.settings.pvpvai.agentId === 56
-          ? AGENT_CONFIGS.AGENT2
-          : extendedChar.settings.pvpvai.agentId === 57
-          ? AGENT_CONFIGS.AGENT3
-          : AGENT_CONFIGS.AGENT4;
-
-        // Add private key to config
-        const privateKeyEnv = isGM
-          ? "GM_PRIVATE_KEY"
-          : `AGENT_${extendedChar.settings.pvpvai.agentId}_PRIVATE_KEY`;
-
+        const {
+          pvpvaiServerUrl,
+          ethWalletAddress,
+          creatorId,
+          agentId,
+          clientPort,
+        } = extendedChar.settings.pvpvai;
         const config = {
-          endpoint: portConfig.endpoint,
-          walletAddress: extendedChar.settings.pvpvai.ethWalletAddress,
-          creatorId: Number(extendedChar.settings.pvpvai.creatorId),
-          port: portConfig.port,
-          agentId: Number(extendedChar.settings.pvpvai.agentId),
-          privateKey: process.env[privateKeyEnv],
+          pvpvaiUrl: pvpvaiServerUrl,
+          walletAddress: ethWalletAddress,
+          creatorId: Number(creatorId),
+          agentId: Number(agentId),
+          privateKey:
+            process.env[`AGENT_${agentId}_PRIVATE_KEY`] ||
+            extendedChar.settings.secrets?.PVPVAI_PRIVATE_KEY,
         };
 
         // Create and initialize client
@@ -160,10 +140,166 @@ async function startAgent(
         // Start listening on the appropriate port
         await new Promise<void>((resolve, reject) => {
           try {
-            directClient.app.listen(portConfig.port, () => {
+            // Add routes before starting the server
+            directClient.app.get("/health", (req, res) => {
+              res.json({
+                status: "ok",
+                agentId,
+              });
+            });
+
+            // Add context route
+
+            // Add message routes with schema validation
+            directClient.app.get("/agentContext", async (req, res) => {
+              try {
+                const context = pvpvaiClient?.getClient()?.getContext();
+                res.json(context);
+              } catch (error) {
+                res.status(500).json({
+                  error: "Failed to get context",
+                  details:
+                    error instanceof Error ? error.message : String(error),
+                });
+              }
+            });
+            // Add message routes with schema validation
+            directClient.app.get("/forceRoundSync", async (req, res) => {
+              try {
+                const { roomId, roundId } = req.body;
+                const context = pvpvaiClient
+                  ?.getClient()
+                  ?.syncCurrentRoundState(roomId, roundId);
+                res.json(context);
+              } catch (error) {
+                res.status(500).json({
+                  error: "Failed to get context",
+                  details:
+                    error instanceof Error ? error.message : String(error),
+                });
+              }
+            });
+            // Add message routes with schema validation
+            directClient.app.post(
+              "/messages/receiveAgent",
+              express.json(),
+              async (req, res) => {
+                try {
+                  const validatedMessage = agentMessageInputSchema.parse(
+                    req.body
+                  );
+                  // Handle the validated message
+                  try {
+                    const result = await pvpvaiClient
+                      ?.getClient()
+                      ?.handleAgentMessage?.(validatedMessage);
+
+                    res.json({
+                      received: true,
+                      message: validatedMessage,
+                      ...result,
+                    });
+                  } catch (error) {
+                    // We are going to assume, unless the error is a validation error, that the message was processed successfully and something happened with the agent
+                    console.error("Error handling agent message:", error);
+                    res.json({
+                      received: false,
+                      success: false,
+                      errorMessage: "Error processing message",
+                      details:
+                        error instanceof Error ? error.message : String(error),
+                    });
+                  }
+                } catch (error) {
+                  // Only validation errors return 400
+                  res.status(400).json({
+                    error: "Invalid message format",
+                    details: error,
+                  });
+                }
+              }
+            );
+
+            directClient.app.post(
+              "/messages/receiveGmInstruction",
+              express.json(),
+              (req, res) => {
+                try {
+                  const validatedMessage = gmMessageInputSchema.parse(req.body);
+                  // Handle the GM instruction
+                  try {
+                    // TODO: Implement GM instruction handling
+                    res.json({
+                      received: true,
+                      success: true,
+                      message: validatedMessage,
+                    });
+                  } catch (error) {
+                    console.error("Error handling GM instruction:", error);
+                    res.json({
+                      received: false,
+                      success: false,
+                      errorMessage: "Error processing GM instruction",
+                      details:
+                        error instanceof Error ? error.message : String(error),
+                    });
+                  }
+                } catch (error) {
+                  // Only validation errors return 400
+                  res.status(400).json({
+                    error: "Invalid message format",
+                    details: error,
+                  });
+                }
+              }
+            );
+
+            directClient.app.post(
+              "/messages/receiveObservation",
+              express.json(),
+              async (req, res) => {
+                try {
+                  const validatedMessage = observationMessageInputSchema.parse(
+                    req.body
+                  );
+
+                  try {
+                    const result = await pvpvaiClient
+                      ?.getClient()
+                      ?.handleReceiveObservation?.(validatedMessage);
+
+                    res.json({
+                      received: true,
+                      message: validatedMessage,
+                      ...result,
+                    });
+                  } catch (error) {
+                    console.error("Error handling observation:", error);
+                    res.json({
+                      received: false,
+                      success: false,
+                      errorMessage: "Error processing observation",
+                      details:
+                        error instanceof Error ? error.message : String(error),
+                    });
+                  }
+                } catch (error) {
+                  // Only validation errors return 400
+                  res.status(400).json({
+                    error: "Invalid message format",
+                    details: error,
+                  });
+                }
+              }
+            );
+
+            directClient.app.listen(clientPort || 3001, () => {
               console.log(
-                `${extendedChar.name} listening on port ${portConfig.port}`
+                `${extendedChar.name} (#${agentId}) listening on port ${
+                  clientPort || 3001
+                }`
               );
+
               resolve();
             });
           } catch (err) {
@@ -172,9 +308,7 @@ async function startAgent(
         });
 
         console.log(
-          `Successfully initialized ${isGM ? "GM" : "Agent"} client for ${
-            extendedChar.name
-          }`
+          `Successfully initialized PvPvAI client for ${extendedChar.name}`
         );
       } catch (error) {
         console.error(
@@ -237,36 +371,39 @@ const startAgents = async () => {
         name: runtime.character.name,
         type: runtime.character.agentRole?.type,
         id: runtime.agentId,
+        roomId: runtime.clients["pvpvai"]?.getClient()?.getRoomId(),
+        port: runtime.clients["pvpvai"]?.getClient()?.getPort(),
+        context: runtime.clients["pvpvai"]?.getClient()?.getContext(),
       });
     }
 
-    // Find GM in runtimes
-    const gmRuntime = runtimes.find(
-      (r) => r.character.agentRole?.type.toUpperCase() === "GM"
-    );
-    if (gmRuntime) {
-      // Start debate orchestrator with all runtimes
-      const orchestrator = new DebateOrchestrator(runtimes);
-      elizaLogger.log("Waiting for connections to establish...");
-      await new Promise((resolve) => setTimeout(resolve, 8000));
+    // // Find GM in runtimes
+    // const gmRuntime = runtimes.find(
+    //   (r) => r.character.agentRole?.type.toUpperCase() === "GM"
+    // );
+    // if (gmRuntime) {
+    //   // Start debate orchestrator with all runtimes
+    //   const orchestrator = new DebateOrchestrator(runtimes);
+    //   elizaLogger.log("Waiting for connections to establish...");
+    //   await new Promise((resolve) => setTimeout(resolve, 8000));
 
-      try {
-        elizaLogger.log("Starting debate...");
-        const roomId = process.env.ROOM_ID
-          ? parseInt(process.env.ROOM_ID)
-          : 290;
-        await orchestrator.initialize(roomId);
-        await orchestrator.startDebate();
-      } catch (error) {
-        elizaLogger.error("Error starting debate:", error);
-      }
+    //   try {
+    //     elizaLogger.log("Starting debate...");
+    //     const roomId = process.env.ROOM_ID
+    //       ? parseInt(process.env.ROOM_ID)
+    //       : 290;
+    //     await orchestrator.initialize(roomId);
+    //     await orchestrator.startDebate();
+    //   } catch (error) {
+    //     elizaLogger.error("Error starting debate:", error);
+    //   }
 
-      process.on("SIGINT", () => {
-        elizaLogger.log("Stopping debate...");
-        orchestrator.stopDebate();
-        process.exit(0);
-      });
-    }
+    //   process.on("SIGINT", () => {
+    //     elizaLogger.log("Stopping debate...");
+    //     orchestrator.stopDebate();
+    //     process.exit(0);
+    //   });
+    // }
   } catch (error) {
     elizaLogger.error("Error starting agents:", error);
     process.exit(1);
