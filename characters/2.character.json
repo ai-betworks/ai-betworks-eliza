@@ -16,7 +16,14 @@
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
       "creatorId": 1,
       "clientPort": 3002,
-      "pvpvaiServerUrl": "http://localhost:3000"
+      "pvpvaiServerUrl": "http://localhost:3000",
+      "investmentStyle": "momentum",
+      "riskTolerance": "high",
+      "experienceLevel": "expert",
+      "technicalWeight": 0.6,
+      "fundamentalWeight": 0.1,
+      "sentimentWeight": 0.2,
+      "riskWeight": 0.1
     }
   },
   "agentRole": {

@@ -11,17 +11,25 @@
       "roundId": 1,
       "endpoint": "http://localhost:3334",
       "type": "AGENT",
-      "agentId": 58,
-      "ethWalletAddress": "0xe268874c5612e116A1e44D6236c0Cb7D717fa75f",
+      "agentId": 40,
+      "ethWalletAddress": "0x23CF89A87b4D168b8F5A0463B9F66fB8e0b1fc8D",
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
       "creatorId": 1,
-      "clientPort": 3004
+      "clientPort": 3004,
+      "pvpvaiServerUrl": "http://localhost:3000",
+      "investmentStyle": "contrarian",
+      "riskTolerance": "high",
+      "experienceLevel": "expert",
+      "technicalWeight": 0.3,
+      "fundamentalWeight": 0.3,
+      "sentimentWeight": 0.3,
+      "riskWeight": 0.1
     }
   },
   "agentRole": {
     "type": "AGENT",
-    "name": "Dolo",
-    "description": "Avalanche maximalist"
+    "name": "Diana",
+    "description": "Arbitrage specialist"
   },
   "environment": {
     "type": "crypto_debate",

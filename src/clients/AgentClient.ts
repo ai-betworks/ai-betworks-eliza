@@ -1,4 +1,5 @@
 import { DirectClient } from "@elizaos/client-direct";
+import { composeContext, stringToUuid } from "@elizaos/core";
 import axios, { AxiosError } from "axios";
 import { Wallet } from "ethers";
 import { z } from "zod";
@@ -14,6 +15,7 @@ import {
 } from "../types/schemas.ts";
 import { HARDCODED_ROOM_ID } from "./PVPVAIIntegration.ts";
 import { sortObjectKeys } from "./sortObjectKeys.ts";
+import { agentMessageShouldRespondTemplate } from "./templates.ts";
 
 enum RoundStatus {
   NONE = 0,
@@ -56,6 +58,33 @@ type RoomChatContext = {
   maxNumAgentMessageContext: number;
   rounds: Record<number, RoundContext>;
   decision?: Decision;
+};
+
+type AgentMessageState = {
+  userId: string;
+  agentId: number;
+  roomId: number;
+  content: {
+    text: string;
+    source: string;
+  };
+  roundContext: {
+    roundId: number;
+    roundStatus: string;
+    startedAt: number;
+    observations: string[];
+    messageHistory: MessageHistoryEntry[];
+  };
+  roomContext: {
+    topic: string;
+    chainId: number;
+    currentRound: number;
+  };
+  senderAgent: Partial<Tables<"agents">>;
+  receiverAgent: {
+    name: string;
+    id: number;
+  };
 };
 
 export class AgentClient extends DirectClient {
@@ -334,8 +363,74 @@ export class AgentClient extends DirectClient {
       //TODO check that message is signed by the GM
 
       //TODO Right here choose how to respond to the message w/ a prompt that has observations and the round and room context
-
-      const shouldRespond = true;
+      let state = await this.runtime.composeState(
+        {
+          userId: stringToUuid(this.agentNumericId.toString()),
+          agentId: stringToUuid(this.agentNumericId.toString()),
+          roomId: stringToUuid("PVPVAI-ROOM-" + this.roomId),
+          content: {
+            text: validatedMessage.content.text,
+            source: "PVPVAI",
+          },
+        },
+        {
+          // We can't put these first three fields above because it clashes with Eliza's types
+          // userId: this.agentNumericId.toString(),
+          // agentId: this.agentNumericId,
+          // roomId: inputRoomId,
+          // Additional context
+          roundContext: {
+            roundId: inputRoundId,
+            roundStatus: this.context.rounds[inputRoundId].status,
+            startedAt: this.context.rounds[inputRoundId].startedAt,
+            observations:
+              this.context.rounds[inputRoundId].observations.slice(-5), // Last 5 observations
+            messageHistory:
+              this.context.rounds[inputRoundId].roundMessageContext.slice(-5),
+          },
+          roomContext: {
+            topic: this.context.topic,
+            chainId: this.context.chainId,
+            currentRound: this.context.currentRound,
+          },
+          senderAgent: this.context.rounds[inputRoundId].agents[inputAgentId],
+          receiverAgent: {
+            name: this.runtime.character.name,
+            id: this.agentNumericId,
+          },
+        }
+      );
+      const shouldRespond = composeContext({
+        state,
+        template: agentMessageShouldRespondTemplate({
+          agentName: this.runtime.character.name,
+          bio: this.runtime.character.bio,
+          knowledge: this.runtime.character.knowledge,
+          personality: this.runtime.character.lore
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 3)
+            .join("\n"),
+          conversationStyle: this.runtime.character.messageExamples
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 3)
+            .join("\n"),
+          investmentStyle:
+            this.runtime.character.settings.pvpvai.investmentStyle,
+          riskTolerance:
+            this.runtime.character.settings.pvpvai.riskTolerance || "moderate",
+          experienceLevel:
+            this.runtime.character.settings.pvpvai.experienceLevel ||
+            "intermediate",
+          recentMessages: this.context.rounds[inputRoundId].roundMessageContext,
+          technicalWeight:
+            this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
+          fundamentalWeight:
+            this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
+          sentimentWeight:
+            this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
+          riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
+        }),
+      });
       if (shouldRespond) {
         validatedMessage.content.text =
           "This is my (" +

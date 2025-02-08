@@ -23,7 +23,14 @@ export type PVPVAISettings = {
   creatorId: number; // Changed from string to number to match DB schema
   clientHost?: string; //Default is 0.0.0.0
   clientPort?: number; //Default is 3001
-}
+  investmentStyle: "value" | "momentum" | "contrarian" | string;
+  riskTolerance: "low" | "moderate" | "high";
+  experienceLevel: "beginner" | "intermediate" | "expert";
+  technicalWeight: number;
+  fundamentalWeight: number;
+  sentimentWeight: number;
+  riskWeight: number;
+};
 
 export interface Environment {
   type: string;
