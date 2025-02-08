@@ -2,7 +2,7 @@
   "name": "Batman",
   "username": "Batman",
   "clients": ["auto", "direct"],
-  "modelProvider": "google",
+  "modelProvider": "anthropic",
   "settings": {
     "pvpvai": {
       "wsUrl": "ws://localhost:3332/ws",

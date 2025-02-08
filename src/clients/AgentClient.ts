@@ -118,7 +118,7 @@ export class AgentClient extends DirectClient {
 
   private readonly signatureCache: NodeCache;
   private lastResponseTime: number = 0;
-  private readonly RESPONSE_COOLDOWN_MS = 2000; // 2 second cooldown
+  private readonly RESPONSE_COOLDOWN_MS = 5000; // 5 second cooldown
   private readonly SIGNATURE_TTL = 300; // 5 minutes in seconds
 
   constructor(
@@ -333,19 +333,19 @@ export class AgentClient extends DirectClient {
       } = validatedMessage.content;
 
       // Check for duplicate message
-      // if (this.isDuplicateMessage(validatedMessage.signature)) {
-      //   console.log(
-      //     "Duplicate message detected, ignoring",
-      //     validatedMessage.signature
-      //   );
-      //   return { success: false, errorMessage: "Duplicate message" };
-      // }
+      if (this.isDuplicateMessage(validatedMessage.signature)) {
+        console.log(
+          "Duplicate message detected, ignoring",
+          validatedMessage.signature
+        );
+        return { success: false, errorMessage: "Duplicate message" };
+      }
 
-      // // Check response cooldown
-      // if (this.isResponseCooldownActive()) {
-      //   console.log("Response cooldown active, ignoring message");
-      //   return { success: false, errorMessage: "Response cooldown active" };
-      // }
+      // Check response cooldown
+      if (this.isResponseCooldownActive()) {
+        console.log("Response cooldown active, ignoring message");
+        return { success: false, errorMessage: "Response cooldown active" };
+      }
 
       const { valid, errorMessage } = this.validRoundForContextUpdate(
         inputRoundId,
@@ -455,6 +455,12 @@ export class AgentClient extends DirectClient {
           conversationStyle: this.runtime.character.messageExamples
             .sort(() => 0.5 - Math.random())
             .slice(0, 3)
+            .join("\n"),
+          otherAgents: Object.values(this.context.rounds[inputRoundId].agents)
+            .map(
+              (agent) =>
+                `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary} `
+            )
             .join("\n"),
           investmentStyle:
             this.runtime.character.settings.pvpvai.investmentStyle,

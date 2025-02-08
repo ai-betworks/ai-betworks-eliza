@@ -2,7 +2,7 @@
   "name": "Hamill",
   "username": "Mark Hamill",
   "clients": ["auto", "direct"],
-  "modelProvider": "google",
+  "modelProvider": "anthropic",
   "settings": {
     "model": "None",
     "pvpvai": {

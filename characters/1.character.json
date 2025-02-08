@@ -16,7 +16,7 @@
     ]
   },
   "clients": ["auto", "direct"],
-  "modelProvider": "google",
+  "modelProvider": "anthropic",
   "settings": {
     "pvpvai": {
       "wsUrl": "ws://localhost:3331/ws",
