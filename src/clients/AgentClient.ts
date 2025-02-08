@@ -156,9 +156,10 @@ export class AgentClient extends DirectClient {
       this.context.rounds[activeRound[0].id] = {
         id: activeRound[0].id,
         status: activeRound[0].status,
-        agents: activeRound[0].round_agents.map(
-          (roundAgent) => roundAgent.agents
-        ),
+        agents: activeRound[0].round_agents.reduce((acc, roundAgent) => {
+          acc[roundAgent.agents.id] = roundAgent.agents;
+          return acc;
+        }, {} as Record<number, Partial<Tables<"agents">>>),
         roundMessageContext: [],
         observations: [],
         startedAt: new Date(activeRound[0].created_at).getTime(),
@@ -287,10 +288,21 @@ export class AgentClient extends DirectClient {
         );
         return { success: false, errorMessage };
       }
+      console.log(this.context.rounds[inputRoundId].agents[inputAgentId]);
+      console.log(
+        Object.keys(this.context.rounds[inputRoundId].agents).find(
+          (id) =>
+            this.context.rounds[inputRoundId].agents[id].id === inputAgentId
+        )
+      );
       if (!this.context.rounds[inputRoundId].agents[inputAgentId]) {
         console.log(
           "received message from agent that doesn't exist in the round",
-          inputAgentId
+          inputAgentId,
+          "expected one of",
+          Object.keys(this.context.rounds[inputRoundId].agents).map(
+            (id) => this.context.rounds[inputRoundId].agents[id].id
+          )
         );
         return {
           success: false,
@@ -323,9 +335,34 @@ export class AgentClient extends DirectClient {
 
       //TODO Right here choose how to respond to the message w/ a prompt that has observations and the round and room context
 
-      // Demo call for this below
-      // const {response, STOP | CONTINUE | IGNORE} = await this.processMessage(validatedMessage.content.text);
+      const shouldRespond = true;
+      if (shouldRespond) {
+        validatedMessage.content.text =
+          "This is my (" +
+          this.runtime.character.name +
+          ") (" +
+          this.agentNumericId +
+          ") test response: " +
+          Date.now();
+
+        console.log("sending message to backend", this.pvpvaiUrl);
+        await axios.post(
+          new URL("messages/agentMessage", this.pvpvaiUrl).toString(),
+          {
+            content: validatedMessage.content,
+            messageType: MessageTypes.AGENT_MESSAGE,
+            signature: await this.generateSignature(validatedMessage.content),
+            sender: this.wallet.address,
+          }
+        );
+        // Demo call for this below
+        // const {response, STOP | CONTINUE | IGNORE} = await this.processMessage(validatedMessage.content.text);
+      }
       // Only respond to messages from other agents
+      console.log(
+        `Finished processing received message on ${this.runtime.character.name}'s (${this.agentNumericId}) client:`,
+        validatedMessage
+      );
     } catch (error) {
       console.error("Error handling agent message:", error);
       return { success: false, errorMessage: "Error handling agent message" };
@@ -368,6 +405,17 @@ export class AgentClient extends DirectClient {
         JSON.stringify(validatedMessage.content)
       ); //TODO would be nice to not do a string here, lazy impl since we may add new observation types
 
+      //if size is greater than maxNumObservationsContext, remove the oldest observation
+      if (
+        this.context.rounds[roundId].observations.length >
+        this.context.maxNumObservationsContext
+      ) {
+        this.context.rounds[roundId].observations.shift();
+      }
+      console.log(
+        `Added observation to ${this.runtime.character.name}'s (${this.agentNumericId}) context:`,
+        validatedMessage
+      );
       // End here for PoC. Observations will be included in the prompt when an agent sends an agentMessage.
       // Later impl will be more dynamic and have agent track interests of other agents in the room and engage with them on an observation
     } catch (error) {

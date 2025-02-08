@@ -14,7 +14,8 @@
       "agentId": 58,
       "ethWalletAddress": "0xe268874c5612e116A1e44D6236c0Cb7D717fa75f",
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
-      "creatorId": 1
+      "creatorId": 1,
+      "clientPort": 3004
     }
   },
   "agentRole": {

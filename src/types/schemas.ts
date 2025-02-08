@@ -4,7 +4,7 @@ export enum MessageTypes {
   HEARTBEAT = "heartbeat",
   AGENT_MESSAGE = "agent_message",
   GM_MESSAGE = "gm_message",
- OBSERVATION = "observation",
+  OBSERVATION = "observation",
 }
 /* 
   OBSERVATION MESSAGES SCHEMA:
@@ -13,6 +13,24 @@ export enum MessageTypes {
   Expected handling behavior:
   - Agents add the observation to room context, so external data can be injected into the prompt to help inform their decisions
 */
+
+// Wallet Balance Schemas
+export const observationWalletBalanceDataSchema = z.object({
+  walletBalances: z.record(z.string(), z.object({
+    nativeBalance: z.bigint(),
+    tokenBalances: z.record(z.string(), z.bigint())
+  }))
+});
+
+// Price Data Schemas
+export const observationPriceDataSchema = z.object({
+  nativePrice: z.number(),
+  tokenPrices: z.record(z.string(), z.object({
+    source: z.string(),
+    tokenPriceUsd: z.number()
+  }))
+});
+
 export enum ObservationType {
   WALLET_BALANCES = "wallet-balances",
   PRICE_DATA = "price-data",
@@ -29,7 +47,7 @@ export const observationMessageInputSchema = z.object({
     roomId: z.number(), // Redundant with path, but kept here since this message is passthrough to AI Chat for frontend.
     roundId: z.number(),
     observationType: z.nativeEnum(ObservationType),
-    data: z.any(), // TODO Tighten up this type later
+    data: z.union([observationWalletBalanceDataSchema, observationPriceDataSchema]), // TODO Tighten up this type later
   }),
 });
 

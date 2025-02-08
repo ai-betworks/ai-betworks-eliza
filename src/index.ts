@@ -181,7 +181,7 @@ async function startAgent(
             });
             // Add message routes with schema validation
             directClient.app.post(
-              "/messages/receiveAgent",
+              "/messages/receiveAgentMessage",
               express.json(),
               async (req, res) => {
                 try {

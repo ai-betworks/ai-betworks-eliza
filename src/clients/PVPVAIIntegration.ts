@@ -20,7 +20,7 @@ export class PVPVAIIntegration {
   private client: AgentClient;
   private runtime: ExtendedAgentRuntime;
   private agentId: number;
-  private pvpvaiUrl: string;
+  private pvpvaiServerUrl: string;
   private roomId: number = HARDCODED_ROOM_ID; //Temporarily hardcoded
   private port: number;
   private wallet: ethers.Wallet;
@@ -46,7 +46,7 @@ export class PVPVAIIntegration {
     }
     this.agentId = agentId;
 
-    this.pvpvaiUrl = char.settings?.pvpvai?.pvpvaiServerUrl || config.pvpvaiUrl;
+    this.pvpvaiServerUrl = char.settings?.pvpvai?.pvpvaiServerUrl || config.pvpvaiUrl;
   }
 
   public async initialize(): Promise<void> {
@@ -62,18 +62,27 @@ export class PVPVAIIntegration {
 
     if (
       agentConfig.eth_wallet_address.toLowerCase() !==
-      wallet.address.toLowerCase()
+        wallet.address.toLowerCase() &&
+      agentConfig.room_agents.find(
+        (ra) => ra.wallet_address.toLowerCase() === wallet.address.toLowerCase()
+      ) === undefined
     ) {
       throw new Error(
         `Client side private key did not resolve to the same address as we have registered 
-        with the server for agent ${this.agentId} (also checked AGENT_${this.agentId}_PRIVATE_KEY). 
-        Expected ${agentConfig.eth_wallet_address}, got ${wallet.address}`
+        with the server for agent ${this.agentId} (also checked AGENT_${
+          this.agentId
+        }_PRIVATE_KEY). 
+        Expected ${
+          agentConfig.eth_wallet_address
+        } or ${agentConfig.room_agents.map((ra) => ra.wallet_address)}, got ${
+          wallet.address
+        }`
       );
     }
 
     this.client = new AgentClient(
       this.runtime,
-      this.pvpvaiUrl,
+      this.pvpvaiServerUrl,
       wallet,
       this.agentId
     );
@@ -85,7 +94,7 @@ export class PVPVAIIntegration {
   private async getAgentConfig(agentId?: number) {
     const { data: agent, error: agentError } = await supabase
       .from("agents")
-      .select("*")
+      .select("*, room_agents(wallet_address)")
       .eq("id", agentId)
       .single();
 

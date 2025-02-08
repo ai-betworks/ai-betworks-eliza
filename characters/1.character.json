@@ -25,10 +25,12 @@
       "roundId": 1,
       "endpoint": "http://localhost:3331",
       "type": "AGENT",
-      "agentId": 56,
+      "agentId": 37,
       "ethWalletAddress": "0x4E5dC9dF946500b07E9c66e4DD29bf9CD062002B",
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
-      "creatorId": 1
+      "creatorId": 1,
+      "clientPort": 3001,
+      "pvpvaiServerUrl": "http://localhost:3000"
     }
   },
   "plugins": [],
