@@ -53,7 +53,6 @@ export function createAgent(
   token: string
 ): ExtendedAgentRuntime {
   const extendedChar = character as unknown as ExtendedCharacter;
-  const extendedAgentRole = extendedChar.agentRole;
 
   elizaLogger.success(
     elizaLogger.successesTitle,
@@ -222,40 +221,6 @@ async function startAgent(
                       received: false,
                       success: false,
                       errorMessage: "Error processing message",
-                      details:
-                        error instanceof Error ? error.message : String(error),
-                    });
-                  }
-                } catch (error) {
-                  // Only validation errors return 400
-                  res.status(400).json({
-                    error: "Invalid message format",
-                    details: error,
-                  });
-                }
-              }
-            );
-
-            directClient.app.post(
-              "/messages/receiveGmInstruction",
-              express.json(),
-              (req, res) => {
-                try {
-                  const validatedMessage = gmMessageInputSchema.parse(req.body);
-                  // Handle the GM instruction
-                  try {
-                    // TODO: Implement GM instruction handling
-                    res.json({
-                      received: true,
-                      success: true,
-                      message: validatedMessage,
-                    });
-                  } catch (error) {
-                    console.error("Error handling GM instruction:", error);
-                    res.json({
-                      received: false,
-                      success: false,
-                      errorMessage: "Error processing GM instruction",
                       details:
                         error instanceof Error ? error.message : String(error),
                     });

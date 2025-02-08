@@ -179,20 +179,21 @@ ${recentMessages}
   );
 };
 
+// wat is confidence style?
 //TODO I suspect this prompt is going to result in hallucinations
 export const messageCompletionTemplate = ({
   agentName,
   bio,
+  knowledge,
+  personality,
+  speakingStyle,
   investmentStyle,
   riskTolerance,
   experienceLevel,
-  expertise,
   technicalWeight,
   fundamentalWeight,
   sentimentWeight,
   riskWeight,
-  confidenceStyle,
-  personalityTrait,
   recentMessages,
   marketData,
   technicalIndicators,
@@ -206,11 +207,17 @@ export const messageCompletionTemplate = ({
 About ${agentName}:
 ${bio}
 
+Knowledge:
+${knowledge}
+
+Personality:
+${personality}
+
 Investment Profile:
 - Style: ${investmentStyle}
 - Risk Tolerance: ${riskTolerance}
 - Experience Level: ${experienceLevel}
-- Key Expertise: ${expertise}
+- Key Expertise: ${knowledge}
 - Decision Weights:
   * Technical Analysis: ${technicalWeight}
   * Fundamental Analysis: ${fundamentalWeight}
@@ -231,9 +238,12 @@ Investment Profile:
 
 Tone and Style:
 - Maintain ${agentName}'s unique personality
-- Express conviction level based on ${confidenceStyle}
+- Express conviction level based on your confidence style
 - Use appropriate technical language for ${experienceLevel}
-- Keep emotional responses aligned with ${personalityTrait}
+- Keep emotional responses aligned with ${personality}
+
+Prior speaking examples:
+${speakingStyle}
 
 Discussion Focus:
 - Prioritize points that advance investment thesis
@@ -315,6 +325,8 @@ Remember:
 - Use actions to support analysis
 - Consider other agents' perspectives
 - Move discussion towards conclusion
+
+Your response, whatever it may be, must note exceed 250 characters in length. Let your personality shine through, just don' write a novel.
 ` + messageCompletionFooter
   );
 };

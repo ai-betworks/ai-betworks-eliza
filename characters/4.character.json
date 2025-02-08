@@ -2,9 +2,8 @@
   "name": "four",
   "username": "four",
   "clients": ["auto", "direct"],
-  "modelProvider": "google",
+  "modelProvider": "anthropic",
   "settings": {
-    "model": "None",
     "pvpvai": {
       "wsUrl": "ws://localhost:3334/ws",
       "roomId": 1,

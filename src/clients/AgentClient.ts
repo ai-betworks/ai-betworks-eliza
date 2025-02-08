@@ -1,7 +1,17 @@
 import { DirectClient } from "@elizaos/client-direct";
-import { composeContext, stringToUuid } from "@elizaos/core";
+import {
+  composeContext,
+  elizaLogger,
+  generateMessageResponse,
+  generateText,
+  IAgentRuntime,
+  ModelClass,
+  parseShouldRespondFromText,
+  stringToUuid,
+} from "@elizaos/core";
 import axios, { AxiosError } from "axios";
 import { Wallet } from "ethers";
+import NodeCache from "node-cache";
 import { z } from "zod";
 import { MessageHistoryEntry } from "../config/types.ts";
 import { supabase } from "../index.ts";
@@ -15,7 +25,10 @@ import {
 } from "../types/schemas.ts";
 import { HARDCODED_ROOM_ID } from "./PVPVAIIntegration.ts";
 import { sortObjectKeys } from "./sortObjectKeys.ts";
-import { agentMessageShouldRespondTemplate } from "./templates.ts";
+import {
+  agentMessageShouldRespondTemplate,
+  messageCompletionTemplate,
+} from "./templates.ts";
 
 enum RoundStatus {
   NONE = 0,
@@ -103,6 +116,11 @@ export class AgentClient extends DirectClient {
   private messageContext: MessageHistoryEntry[] = [];
   private readonly MAX_CONTEXT_SIZE = 8;
 
+  private readonly signatureCache: NodeCache;
+  private lastResponseTime: number = 0;
+  private readonly RESPONSE_COOLDOWN_MS = 2000; // 2 second cooldown
+  private readonly SIGNATURE_TTL = 300; // 5 minutes in seconds
+
   constructor(
     runtime: ExtendedAgentRuntime,
     pvpvaiUrl: string,
@@ -124,6 +142,11 @@ export class AgentClient extends DirectClient {
       maxNumAgentMessageContext: 10,
       rounds: {},
     };
+
+    this.signatureCache = new NodeCache({
+      stdTTL: this.SIGNATURE_TTL,
+      checkperiod: 120, // Check for expired items every 2 minutes
+    });
   }
 
   public async initializeRoomContext(roomId: number): Promise<void> {
@@ -155,7 +178,6 @@ export class AgentClient extends DirectClient {
       .order("created_at", { ascending: false })
       .limit(1);
     // .single();
-    console.log("activeRound", activeRound);
 
     //TODO Get GM
 
@@ -296,7 +318,6 @@ export class AgentClient extends DirectClient {
   private async generateSignature(content: any): Promise<string> {
     // Sign the stringified sorted content
     const messageString = JSON.stringify(sortObjectKeys(content));
-    console.log("Agent signing message:", messageString);
     return await this.wallet.signMessage(messageString);
   }
 
@@ -311,6 +332,21 @@ export class AgentClient extends DirectClient {
         roomId: inputRoomId,
       } = validatedMessage.content;
 
+      // Check for duplicate message
+      // if (this.isDuplicateMessage(validatedMessage.signature)) {
+      //   console.log(
+      //     "Duplicate message detected, ignoring",
+      //     validatedMessage.signature
+      //   );
+      //   return { success: false, errorMessage: "Duplicate message" };
+      // }
+
+      // // Check response cooldown
+      // if (this.isResponseCooldownActive()) {
+      //   console.log("Response cooldown active, ignoring message");
+      //   return { success: false, errorMessage: "Response cooldown active" };
+      // }
+
       const { valid, errorMessage } = this.validRoundForContextUpdate(
         inputRoundId,
         true
@@ -321,13 +357,13 @@ export class AgentClient extends DirectClient {
         );
         return { success: false, errorMessage };
       }
-      console.log(this.context.rounds[inputRoundId].agents[inputAgentId]);
-      console.log(
-        Object.keys(this.context.rounds[inputRoundId].agents).find(
-          (id) =>
-            this.context.rounds[inputRoundId].agents[id].id === inputAgentId
-        )
-      );
+      // console.log(this.context.rounds[inputRoundId].agents[inputAgentId]);
+      // console.log(
+      //   Object.keys(this.context.rounds[inputRoundId].agents).find(
+      //     (id) =>
+      //       this.context.rounds[inputRoundId].agents[id].id === inputAgentId
+      //   )
+      // );
       if (!this.context.rounds[inputRoundId].agents[inputAgentId]) {
         console.log(
           "received message from agent that doesn't exist in the round",
@@ -351,6 +387,8 @@ export class AgentClient extends DirectClient {
         );
         return { success: false, errorMessage: "Round is not open" };
       }
+      console.log("inputAgentId", inputAgentId);
+      console.log("this.agentNumericId", this.agentNumericId);
       if (inputAgentId === this.agentNumericId) {
         console.log("received message from self, ignoring");
         return { success: false, errorMessage: "Message from self" };
@@ -404,7 +442,7 @@ export class AgentClient extends DirectClient {
           },
         }
       );
-      const shouldRespond = composeContext({
+      const shouldRespondContext = composeContext({
         state,
         template: agentMessageShouldRespondTemplate({
           agentName: this.runtime.character.name,
@@ -435,27 +473,98 @@ export class AgentClient extends DirectClient {
           riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
         }),
       });
-      if (shouldRespond) {
-        validatedMessage.content.text =
-          "This is my (" +
-          this.runtime.character.name +
-          ") (" +
-          this.agentNumericId +
-          ") test response: " +
-          Date.now();
 
-        console.log("sending message to backend", this.pvpvaiUrl);
-        await axios.post(
+      const response = await this.generateShouldRespond({
+        runtime: this.runtime,
+        context: shouldRespondContext,
+        modelClass: ModelClass.LARGE,
+      });
+
+      // console.log("shouldRespondContext", shouldRespondContext);
+      console.log(
+        `${this.runtime.character.name} choosing to respond?: ${response}`
+      );
+
+      if (response === "RESPOND") {
+        // Update last response time before generating response
+        this.lastResponseTime = Date.now();
+
+        const shouldRespondContext = composeContext({
+          state,
+          template: messageCompletionTemplate({
+            agentName: this.runtime.character.name,
+            bio: this.runtime.character.bio,
+            knowledge: this.runtime.character.knowledge,
+            personality: this.runtime.character.lore
+              .sort(() => 0.5 - Math.random())
+              .slice(0, 3)
+              .join("\n"),
+            speakingStyle: this.runtime.character.messageExamples
+              .sort(() => 0.5 - Math.random())
+              .slice(0, 3)
+              .join("\n"),
+            investmentStyle:
+              this.runtime.character.settings.pvpvai.investmentStyle,
+            riskTolerance:
+              this.runtime.character.settings.pvpvai.riskTolerance ||
+              "moderate",
+            experienceLevel:
+              this.runtime.character.settings.pvpvai.experienceLevel ||
+              "intermediate",
+            recentMessages:
+              this.context.rounds[inputRoundId].roundMessageContext,
+            technicalWeight:
+              this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
+            fundamentalWeight:
+              this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
+            sentimentWeight:
+              this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
+            riskWeight:
+              this.runtime.character.settings.pvpvai.riskWeight || 0.2,
+            marketData: this.context.rounds[inputRoundId].observations,
+            technicalIndicators: this.context.rounds[inputRoundId].observations,
+            newsFeeds: this.context.rounds[inputRoundId].observations,
+            onchainMetrics: this.context.rounds[inputRoundId].observations,
+          }),
+        });
+        const response = await generateMessageResponse({
+          runtime: this.runtime,
+          context: shouldRespondContext,
+          modelClass: ModelClass.LARGE,
+        });
+
+        const responseContent = {
+          timestamp: Date.now(),
+          agentId: this.agentNumericId,
+          roomId: this.roomId,
+          roundId: this.context.currentRound,
+          text: response.text,
+        } satisfies z.infer<typeof agentMessageAgentOutputSchema>["content"];
+
+        const message = {
+          content: sortObjectKeys(responseContent),
+          messageType: MessageTypes.AGENT_MESSAGE,
+          signature: await this.generateSignature(responseContent),
+          sender: this.wallet.address,
+        } satisfies z.infer<typeof agentMessageAgentOutputSchema>;
+        console.log("my response", response);
+        console.log(
+          "sending message to backend",
+          new URL("messages/agentMessage", this.pvpvaiUrl).toString()
+        );
+        // Don't wait or you'll deadlock because the GM will send you back a message right away.
+        axios.post(
           new URL("messages/agentMessage", this.pvpvaiUrl).toString(),
-          {
-            content: validatedMessage.content,
-            messageType: MessageTypes.AGENT_MESSAGE,
-            signature: await this.generateSignature(validatedMessage.content),
-            sender: this.wallet.address,
-          }
+          message
         );
         // Demo call for this below
         // const {response, STOP | CONTINUE | IGNORE} = await this.processMessage(validatedMessage.content.text);
+      } else if (response === "STOP") {
+        console.log("Agent STOPPED at this message");
+        return { success: false, errorMessage: "STOPPED" };
+      } else if (response === "IGNORE") {
+        console.log("Agent IGNORED this message");
+        return { success: false, errorMessage: "IGNORED" };
       }
       // Only respond to messages from other agents
       console.log(
@@ -463,7 +572,11 @@ export class AgentClient extends DirectClient {
         validatedMessage
       );
     } catch (error) {
-      console.error("Error handling agent message:", error);
+      if (error instanceof AxiosError) {
+        console.error("Error handling agent message:", error.response?.data);
+      } else {
+        console.error("Error handling agent message:", error);
+      }
       return { success: false, errorMessage: "Error handling agent message" };
     }
   }
@@ -568,6 +681,51 @@ export class AgentClient extends DirectClient {
     return { valid: true };
   }
 
+  public async generateShouldRespond({
+    runtime,
+    context,
+    modelClass,
+  }: {
+    runtime: IAgentRuntime;
+    context: string;
+    modelClass: ModelClass;
+  }): Promise<"RESPOND" | "IGNORE" | "STOP" | null> {
+    let retryDelay = 1000;
+    while (true) {
+      try {
+        elizaLogger.debug("Attempting to generate text with context:", context);
+        const response = await generateText({
+          runtime,
+          context,
+          modelClass,
+        });
+
+        elizaLogger.debug("Received response from generateText:", response);
+        const parsedResponse = parseShouldRespondFromText(response.trim());
+        if (parsedResponse) {
+          elizaLogger.debug("Parsed response:", parsedResponse);
+          return parsedResponse;
+        } else {
+          elizaLogger.debug("generateShouldRespond no response");
+        }
+      } catch (error) {
+        elizaLogger.error("Error in generateShouldRespond:", error);
+        if (
+          error instanceof TypeError &&
+          error.message.includes("queueTextCompletion")
+        ) {
+          elizaLogger.error(
+            "TypeError: Cannot read properties of null (reading 'queueTextCompletion')"
+          );
+        }
+      }
+
+      elizaLogger.log(`Retrying in ${retryDelay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      retryDelay *= 2;
+    }
+  }
+
   public getRoomId(): number {
     return this.roomId;
   }
@@ -586,5 +744,22 @@ export class AgentClient extends DirectClient {
   public override stop(): void {
     this.isActive = false;
     super.stop();
+  }
+
+  private isDuplicateMessage(signature: string): boolean {
+    const cacheKey = `sig_${signature}`;
+    if (this.signatureCache.has(cacheKey)) {
+      return true;
+    }
+    this.signatureCache.set(cacheKey, true);
+    return false;
+  }
+
+  private isResponseCooldownActive(): boolean {
+    const now = Date.now();
+    if (now - this.lastResponseTime < this.RESPONSE_COOLDOWN_MS) {
+      return true;
+    }
+    return false;
   }
 }
