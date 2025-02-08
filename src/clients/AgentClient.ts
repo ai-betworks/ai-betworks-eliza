@@ -203,7 +203,7 @@ export class AgentClient extends DirectClient {
     // First get rounds data
     const { data: rounds, error: roundsError } = await supabase
       .from("rounds")
-      .select(`*, agents(*)`)
+      .select(`*, round_agents(*, agents(*))`)
       .eq("room_id", roomId)
       .in(
         "id",
@@ -218,6 +218,7 @@ export class AgentClient extends DirectClient {
         );
         return;
       }
+      console.error("Error syncing current round state:", roundsError);
       throw roundsError;
     }
 
@@ -231,7 +232,10 @@ export class AgentClient extends DirectClient {
       this.context.rounds[round.id] = {
         id: round.id,
         status: round.status,
-        agents: round.agents,
+        agents: round.round_agents.reduce((acc, roundAgent) => {
+          acc[roundAgent.agents.id] = roundAgent.agents;
+          return acc;
+        }, {} as Record<number, Partial<Tables<"agents">>>),
         roundMessageContext:
           this.context.rounds[round.id]?.roundMessageContext || [],
         observations,
