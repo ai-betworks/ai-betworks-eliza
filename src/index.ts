@@ -8,6 +8,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { z } from "zod";
 import { initializeDbCache } from "./cache/index.ts";
 import { character } from "./character.ts";
 import { createPVPVAIClient } from "./clients/PVPVAIIntegration.ts";
@@ -25,7 +26,7 @@ import type {
 } from "./types/index.ts";
 import {
   agentMessageInputSchema,
-  gmMessageInputSchema,
+  gmInstructDecisionInputSchema,
   observationMessageInputSchema,
 } from "./types/schemas.ts";
 
@@ -168,7 +169,7 @@ async function startAgent(
                 const { roomId, roundId } = req.body;
                 const context = pvpvaiClient
                   ?.getClient()
-                  ?.syncCurrentRoundState(roomId, roundId);
+                  ?.syncStateWithRound(roomId, roundId);
                 res.json(context);
               } catch (error) {
                 res.status(500).json({
@@ -286,6 +287,47 @@ async function startAgent(
           } catch (err) {
             reject(err);
           }
+
+          // Decision endpoint
+          directClient.app.post(
+            "/messages/gmInstructDecision",
+            express.json(),
+            async (req, res) => {
+              try {
+                const validatedMessage = gmInstructDecisionInputSchema.parse(
+                  req.body
+                );
+                console.log("gmInstructDecision", validatedMessage);
+                const result = await pvpvaiClient
+                  ?.getClient()
+                  ?.handleDecisionRequest(
+                    validatedMessage.content.roomId,
+                    validatedMessage.content.roundId
+                  );
+                res.json({
+                  success: true,
+                  result,
+                });
+              } catch (error) {
+                // If it's a validation error, return 400
+                if (error instanceof z.ZodError) {
+                  res.status(400).json({
+                    success: false,
+                    error: "Invalid message format",
+                    details: error.errors,
+                  });
+                  return;
+                }
+                // For other errors, return 500
+                res.status(500).json({
+                  success: false,
+                  error: "Error processing decision",
+                  details:
+                    error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+          );
         });
 
         console.log(

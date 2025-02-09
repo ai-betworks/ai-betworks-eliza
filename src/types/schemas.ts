@@ -5,6 +5,11 @@ export enum MessageTypes {
   AGENT_MESSAGE = "agent_message",
   GM_MESSAGE = "gm_message",
   OBSERVATION = "observation",
+  GM_INSTRUCT_DECISION = "gm_instruct_decision",
+  GM_INSTRUCT_ROUND_STATE_CHANGE = "gm_instruct_round_state_change",
+  GM_INSTRUCT_SYNCHRONIZE_STATE = "gm_instruct_synchronize_state",
+  AGENT_DECISION = "agent_decision",
+  AGENT_NUDGE = "agent_nudge",
 }
 /* 
   OBSERVATION MESSAGES SCHEMA:
@@ -16,19 +21,25 @@ export enum MessageTypes {
 
 // Wallet Balance Schemas
 export const observationWalletBalanceDataSchema = z.object({
-  walletBalances: z.record(z.string(), z.object({
-    nativeBalance: z.bigint(),
-    tokenBalances: z.record(z.string(), z.bigint())
-  }))
+  walletBalances: z.record(
+    z.string(),
+    z.object({
+      nativeBalance: z.bigint(),
+      tokenBalances: z.record(z.string(), z.bigint()),
+    })
+  ),
 });
 
 // Price Data Schemas
 export const observationPriceDataSchema = z.object({
   nativePrice: z.number(),
-  tokenPrices: z.record(z.string(), z.object({
-    source: z.string(),
-    tokenPriceUsd: z.number()
-  }))
+  tokenPrices: z.record(
+    z.string(),
+    z.object({
+      source: z.string(),
+      tokenPriceUsd: z.number(),
+    })
+  ),
 });
 
 export enum ObservationType {
@@ -47,7 +58,10 @@ export const observationMessageInputSchema = z.object({
     roomId: z.number(), // Redundant with path, but kept here since this message is passthrough to AI Chat for frontend.
     roundId: z.number(),
     observationType: z.nativeEnum(ObservationType),
-    data: z.union([observationWalletBalanceDataSchema, observationPriceDataSchema]), // TODO Tighten up this type later
+    data: z.union([
+      observationWalletBalanceDataSchema,
+      observationPriceDataSchema,
+    ]), // TODO Tighten up this type later
   }),
 });
 
@@ -103,4 +117,24 @@ export const messagesRestResponseSchema = z.object({
   message: z.string().optional(),
   data: z.any().optional(),
   error: z.string().optional(),
+});
+
+export const gmInstructRoundStateChangeInputSchema = z.object({
+  messageType: z.literal(MessageTypes.GM_INSTRUCT_ROUND_STATE_CHANGE),
+  signature: z.string(),
+  sender: z.string(),
+  content: z.object({
+    roomId: z.number(),
+    roundId: z.number(),
+  }),
+});
+
+export const gmInstructDecisionInputSchema = z.object({
+  messageType: z.literal(MessageTypes.GM_INSTRUCT_DECISION),
+  signature: z.string(),
+  sender: z.string(),
+  content: z.object({
+    roomId: z.number(),
+    roundId: z.number(),
+  }),
 });

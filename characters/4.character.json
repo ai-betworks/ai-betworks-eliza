@@ -14,7 +14,7 @@
       "ethWalletAddress": "0x23CF89A87b4D168b8F5A0463B9F66fB8e0b1fc8D",
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
       "creatorId": 1,
-      "clientPort": 3004,
+      "clientPort": 300,
       "pvpvaiServerUrl": "http://localhost:3000",
       "investmentStyle": "contrarian",
       "riskTolerance": "high",

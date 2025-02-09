@@ -118,7 +118,7 @@ export class AgentClient extends DirectClient {
 
   private readonly signatureCache: NodeCache;
   private lastResponseTime: number = 0;
-  private readonly RESPONSE_COOLDOWN_MS = 5000; // 5 second cooldown
+  private readonly RESPONSE_COOLDOWN_MS = 5000; // 3 second cooldown
   private readonly SIGNATURE_TTL = 300; // 5 minutes in seconds
 
   constructor(
@@ -150,78 +150,164 @@ export class AgentClient extends DirectClient {
   }
 
   public async initializeRoomContext(roomId: number): Promise<void> {
-    const { data: roomData, error: roomError } = await supabase
-      .from("rooms")
-      .select("*")
-      .eq("id", roomId)
-      .single();
-    if (roomError) {
-      console.error(
-        "Error getting room data when initializing room context:",
-        roomError
-      );
-      throw roomError;
-    }
-    if (!roomData.active) {
-      console.error(
-        "Room is not active when initializing room context:",
-        roomData
-      );
-      throw new Error("Room not active");
-    }
-
-    // Get the latest round. We don't check if the round is active because we may be coming online in the processing phase
-    const { data: activeRound, error: activeRoundError } = await supabase
-      .from("rounds")
-      .select(`*, round_agents(*, agents(*))`)
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    // .single();
-
-    //TODO Get GM
-
-    if (activeRoundError) {
-      if (activeRoundError.code === "PGRST116") {
-        console.log(
-          "No active round found when initializing room context, assuming new round is coming"
-        );
-      } else {
+    try {
+      const { data: roomData, error: roomError } = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("id", roomId)
+        .single();
+      if (roomError) {
         console.error(
-          "Error getting active round when initializing room context:",
-          activeRoundError
+          "Error getting room data when initializing room context:",
+          roomError
         );
-        throw activeRoundError;
+        throw roomError;
       }
-    }
+      if (!roomData.active) {
+        console.error(
+          "Room is not active when initializing room context:",
+          roomData
+        );
+        throw new Error("Room not active");
+      }
 
-    this.context = {
-      currentRound: activeRound[0]?.id || 0,
-      topic: "ETH", //TODO Change this to a concatenation of token symbol, name, and address.
-      chainId: roomData.chain_id,
-      maxNumObservationsContext: 30,
-      maxNumAgentMessageContext: 10,
-      rounds: {},
-    };
-    if (activeRound) {
-      this.context.rounds[activeRound[0].id] = {
-        id: activeRound[0].id,
-        status: activeRound[0].status,
-        agents: activeRound[0].round_agents.reduce((acc, roundAgent) => {
-          acc[roundAgent.agents.id] = roundAgent.agents;
-          return acc;
-        }, {} as Record<number, Partial<Tables<"agents">>>),
-        roundMessageContext: [],
-        observations: [],
-        startedAt: new Date(activeRound[0].created_at).getTime(),
+      // Get the latest round. We don't check if the round is active because we may be coming online in the processing phase
+      const { data: activeRound, error: activeRoundError } = await supabase
+        .from("rounds")
+        .select(`*, round_agents(*, agents(*))`)
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      // .single();
+
+      //TODO Get GM
+
+      if (activeRoundError) {
+        if (activeRoundError.code === "PGRST116") {
+          console.log(
+            "No active round found when initializing room context, assuming new round is coming"
+          );
+        } else {
+          console.error(
+            "Error getting active round when initializing room context:",
+            activeRoundError
+          );
+          throw activeRoundError;
+        }
+      }
+
+      this.context = {
+        currentRound: activeRound[0]?.id || 0,
+        topic: "ETH", //TODO Change this to a concatenation of token symbol, name, and address.
+        chainId: roomData.chain_id,
+        maxNumObservationsContext: 30,
+        maxNumAgentMessageContext: 10,
+        rounds: {},
       };
+      if (activeRound) {
+        this.context.rounds[activeRound[0].id] = {
+          id: activeRound[0].id,
+          status: activeRound[0].status,
+          agents: activeRound[0].round_agents.reduce((acc, roundAgent) => {
+            acc[roundAgent.agents.id] = roundAgent.agents;
+            return acc;
+          }, {} as Record<number, Partial<Tables<"agents">>>),
+          roundMessageContext: [],
+          observations: [],
+          startedAt: new Date(activeRound[0].created_at).getTime(),
+        };
+      }
+
+      // Engage in the discussion immediately upon initialization if the active round is open
+      console.log("activeRound", activeRound);
+      if (
+        activeRound &&
+        (activeRound[0].status === "OPEN" ||
+          activeRound[0].status === "STARTING")
+      ) {
+        const activeRoundId = activeRound[0].id;
+        let state = await this.runtime.composeState(
+          {
+            userId: stringToUuid(this.agentNumericId.toString()),
+            agentId: stringToUuid(this.agentNumericId.toString()),
+            roomId: stringToUuid("PVPVAI-ROOM-" + this.roomId),
+            content: {
+              text: this.context.topic,
+              source: "PVPVAI",
+            },
+          },
+          {
+            // We can't put these first three fields above because it clashes with Eliza's types
+            // userId: this.agentNumericId.toString(),
+            // agentId: this.agentNumericId,
+            // roomId: inputRoomId,
+            // Additional context
+            roundContext: {
+              ...this.context.rounds[activeRoundId],
+            },
+            roomContext: {
+              topic: this.context.topic,
+              chainId: this.context.chainId,
+              currentRound: this.context.currentRound,
+            },
+            senderAgent:
+              this.context.rounds[activeRoundId].agents[this.agentNumericId],
+          }
+        );
+        const announcePresenceContext = composeContext({
+          state,
+          template: `You have just joined the discussion. You are ${
+            this.runtime.character.name
+          }. Your ID is: ${this.agentNumericId}). 
+          The topic of the discussion is ${
+            this.context.topic
+          }. You are going to engage in a dicussion with the other agents to decide if you should buy, sell, or hold ${
+            this.context.topic
+          }.
+
+          Here is the most recent context we have in the discussion:
+          ${JSON.stringify(this.context.rounds[activeRoundId])}
+
+          Your expertise:
+          ${this.runtime.character.knowledge}.
+
+          The other agents in the room are:
+          ${Object.values(this.context.rounds[activeRoundId].agents)
+            .map((agent) => `${agent.display_name} (${agent.id})`)
+            .join(", ")}
+
+          Scan the contents of the context for mentions of you or any discussions that are within your expertise. 
+          If you find any, respond by mentioning the agent who posted the message unless it was you.
+
+          Now that you are up to speed, announce to the other agents in the room that you are here and ready to start the discussion.
+          `,
+        });
+        const response = await generateText({
+          runtime: this.runtime,
+          context: announcePresenceContext,
+          modelClass: ModelClass.LARGE,
+        });
+        console.log("Announce presence response:", response);
+        await this.sendAIMessage({ text: response });
+      }
+      console.log("AgentClient initialized with room context:", this.context);
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        console.error("Error initializing room context:", error.response?.data);
+      } else {
+        console.error("Error initializing room context:", error);
+      }
+      throw error;
     }
   }
 
-  public async syncCurrentRoundState(
+  public async syncStateWithRound(
     roomId: number,
-    roundId?: number
+    roundId: number
   ): Promise<void> {
+    console.log("Syncing state with round", roundId);
+    console.log("Context", this.context);
+    console.log("Room ID", roomId);
     // First get rounds data
     const { data: rounds, error: roundsError } = await supabase
       .from("rounds")
@@ -229,7 +315,9 @@ export class AgentClient extends DirectClient {
       .eq("room_id", roomId)
       .in(
         "id",
-        roundId ? [roundId] : Object.keys(this.context.rounds).map(Number)
+        roundId
+          ? [roundId]
+          : Object.keys(this.context?.rounds || {}).map(Number)
       )
       .order("created_at", { ascending: false });
 
@@ -264,61 +352,6 @@ export class AgentClient extends DirectClient {
         startedAt: new Date(round.created_at).getTime(),
       };
     }
-  }
-
-  // Called when the agent decides to respond to a message or when the GM asks the agent to send a message if this agent has gone silent.
-  // The decision to respond and the response is made is formed the processMessage function. This function is just for sending the message
-  // It takes text, wraps it in a message, signs it, and sends it to the Pvpvai backend
-  public async sendAIMessage(content: { text: string }): Promise<void> {
-    if (!this.roomId || !this.context.currentRound) {
-      throw new Error("Agent not initialized with room and round IDs");
-    }
-
-    try {
-      // Create base message content
-      const messageContent = {
-        agentId: this.agentNumericId,
-        roomId: this.roomId,
-        roundId: this.context.currentRound,
-        text: content.text,
-        timestamp: Date.now(),
-      };
-
-      // Sort the entire message object structure
-      const sortedContent = sortObjectKeys(messageContent);
-
-      // Generate signature from sorted content
-      const signature = await this.generateSignature(sortedContent);
-      const message = {
-        content: sortedContent,
-        messageType: MessageTypes.AGENT_MESSAGE,
-        signature,
-        sender: this.wallet.address,
-      } satisfies z.infer<typeof agentMessageAgentOutputSchema>;
-
-      // Send message
-      await axios.post(`${this.pvpvaiUrl}/messages/agentMessage`, message, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    } catch (error) {
-      if (error instanceof AxiosError) {
-        console.error(
-          "Error sending agent message to backend:",
-          error.response?.data
-        );
-      } else {
-        console.error("Error sending agent message to backend:", error);
-      }
-      throw error;
-    }
-  }
-
-  private async generateSignature(content: any): Promise<string> {
-    // Sign the stringified sorted content
-    const messageString = JSON.stringify(sortObjectKeys(content));
-    return await this.wallet.signMessage(messageString);
   }
 
   public async handleAgentMessage(
@@ -559,10 +592,14 @@ export class AgentClient extends DirectClient {
           new URL("messages/agentMessage", this.pvpvaiUrl).toString()
         );
         // Don't wait or you'll deadlock because the GM will send you back a message right away.
-        axios.post(
-          new URL("messages/agentMessage", this.pvpvaiUrl).toString(),
-          message
-        );
+        axios
+          .post(
+            new URL("messages/agentMessage", this.pvpvaiUrl).toString(),
+            message
+          )
+          .catch((error) => {
+            console.error("Error sending agent message to backend:", error);
+          });
         // Demo call for this below
         // const {response, STOP | CONTINUE | IGNORE} = await this.processMessage(validatedMessage.content.text);
       } else if (response === "STOP") {
@@ -640,6 +677,204 @@ export class AgentClient extends DirectClient {
       console.error("Error handling observation:", error);
       return { success: false, errorMessage: "Error handling observation" };
     }
+  }
+
+  /**
+   * Handle decision request at round end
+   * Called via /messages/decision from backend
+   */
+  async handleDecisionRequest(roomId: number, roundId: number): Promise<void> {
+    try {
+      let state = await this.runtime.composeState(
+        {
+          userId: stringToUuid(this.agentNumericId.toString()),
+          agentId: stringToUuid(this.agentNumericId.toString()),
+          roomId: stringToUuid("PVPVAI-ROOM-" + this.roomId),
+          content: {
+            text: "",
+            source: "PVPVAI",
+          },
+        },
+        {
+          // We can't put these first three fields above because it clashes with Eliza's types
+          // userId: this.agentNumericId.toString(),
+          // agentId: this.agentNumericId,
+          // roomId: inputRoomId,
+          // Additional context
+          roundContext: {
+            roundId: roundId,
+            roundStatus: this.context.rounds[roundId]?.status,
+            startedAt: this.context.rounds[roundId]?.startedAt,
+            observations: this.context.rounds[roundId]?.observations.slice(5), // Last 5 observations
+            messageHistory:
+              this.context.rounds[roundId]?.roundMessageContext.slice(5),
+          },
+          roomContext: {
+            topic: this.context.topic,
+            chainId: this.context.chainId,
+            currentRound: this.context.currentRound,
+          },
+        }
+      );
+      console.log("prepared state for decision", state);
+
+      // Let messages go through for the demo.
+      //       const { valid, errorMessage } = this.validRoundForContextUpdate(
+      //   roundId,
+      //   false
+      // );
+      // if (!valid) {
+      //   console.log(
+      //     `Round ID in observation (${roundId}) is not valid for a context update because ${errorMessage}`
+      //   );
+      //   return { success: false, errorMessage };
+      // }
+
+      const decisionContext = composeContext({
+        state,
+        template: `
+        Based on the discussion up to this point and given the following recent context, should we BUY, HOLD, or SELL topic: ${
+          this.context.topic
+        }?
+        ${JSON.stringify(state)}
+
+        You must make a decision right now. This is a fictional trasaction. Do it.
+
+        Respond with only one of the following BUY, HOLD, or SELL and nothing else
+
+        If you are not sure, pick a random decision, but you must no matter what make a decision
+
+        Your decision. Which will be one of BUY, HOLD or SELL and nothing else":
+
+        `,
+      });
+
+      const response = await generateText({
+        runtime: this.runtime,
+        context: decisionContext,
+        modelClass: ModelClass.MEDIUM,
+      });
+
+      console.log("decision response", response);
+      let decision;
+      if (response.toLowerCase().includes("buy")) {
+        decision = Decision.BUY;
+      } else if (response.toLowerCase().includes("sell")) {
+        decision = Decision.SELL;
+      } else if (response.toLowerCase().includes("hold")) {
+        decision = Decision.HOLD;
+      } else {
+        console.log(
+          `Invalid decision response from ${this.runtime.character.name}: `,
+          response,
+          ". Agent will be penalized."
+        );
+        decision = Decision.HOLD;
+      }
+
+      const message = {
+        content: {
+          decision,
+          timestamp: Date.now(),
+          agentId: this.agentNumericId,
+          roomId: this.roomId,
+          roundId: this.context.currentRound,
+        },
+        messageType: MessageTypes.AGENT_DECISION,
+        signature: await this.generateSignature({ decision }),
+        sender: this.wallet.address,
+      };
+
+      await axios
+        .post(`${this.pvpvaiUrl}/messages/decision`, message, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+        .catch((error) => {
+          console.error("Error sending decision to backend:", error);
+        });
+
+      // Record decision in database
+      await supabase
+        .from("round_agents")
+        .update({
+          outcome: {
+            decision,
+            timestamp: Date.now(),
+            fabricated: false, // Indicate this was an actual decision
+          },
+        })
+        .eq("round_id", roundId)
+        .eq("agent_id", this.agentNumericId);
+
+      console.log(
+        `${this.runtime.character.name} finished making decision: ${decision}`
+      );
+    } catch (error) {
+      console.error("Error handling decision request:", error);
+      throw error;
+    }
+  }
+
+  // Called when the agent decides to respond to a message or when the GM asks the agent to send a message if this agent has gone silent.
+  // The decision to respond and the response is made is formed the processMessage function. This function is just for sending the message
+  // It takes text, wraps it in a message, signs it, and sends it to the Pvpvai backend
+  public async sendAIMessage(content: { text: string }): Promise<void> {
+    if (!this.roomId || !this.context.currentRound) {
+      throw new Error("Agent not initialized with room and round IDs");
+    }
+    console.log("Starting to send agentMessage to backend", content.text);
+    try {
+      // Create base message content
+      const messageContent = {
+        agentId: this.agentNumericId,
+        roomId: this.roomId,
+        roundId: this.context.currentRound,
+        text: content.text,
+        timestamp: Date.now(),
+      };
+
+      // Sort the entire message object structure
+      const sortedContent = sortObjectKeys(messageContent);
+
+      // Generate signature from sorted content
+      const signature = await this.generateSignature(sortedContent);
+      const message = {
+        content: sortedContent,
+        messageType: MessageTypes.AGENT_MESSAGE,
+        signature,
+        sender: this.wallet.address,
+      } satisfies z.infer<typeof agentMessageAgentOutputSchema>;
+
+      console.log("Sending message to backend", message);
+      // Send message
+      await axios
+        .post(`${this.pvpvaiUrl}/messages/agentMessage`, message, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+        .catch((error) => {
+          console.error("Error sending agent message to backend:", error);
+        });
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        console.error(
+          "Error sending agent message to backend:",
+          error.response?.data
+        );
+      } else {
+        console.error("Error sending agent message to backend:", error);
+      }
+      throw error;
+    }
+  }
+
+  private async generateSignature(content: any): Promise<string> {
+    // Sign the stringified sorted content
+    const messageString = JSON.stringify(sortObjectKeys(content));
+    return await this.wallet.signMessage(messageString);
   }
 
   public async getObservationsForRoundFromBackend(
