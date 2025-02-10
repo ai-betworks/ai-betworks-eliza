@@ -65,7 +65,6 @@ export class ContractEventListener {
               startedAt: startBlockTimestamp,
               endsAt: endBlockTimestamp,
               agents: agents,
-              roundMessageContext: [],
             };
           } catch (error) {
             elizaLogger.error('Error processing RoundStarted event:', error);

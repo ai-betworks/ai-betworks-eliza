@@ -6,7 +6,7 @@ import type {
   Character as ExtendedCharacter,
 } from "../types/index.ts";
 import { AgentClient } from "./AgentClient.ts";
-import { ContractEventListener } from "./ContractEventListener";
+import { ContractEventListener } from './ContractEventListener';
 
 export const HARDCODED_ROOM_ID = Number(process.env.ROOM_ID) || 290;
 

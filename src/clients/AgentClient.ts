@@ -14,7 +14,6 @@ import axios, { AxiosError } from 'axios';
 import { Wallet } from 'ethers';
 import NodeCache from 'node-cache';
 import { z } from 'zod';
-import { MessageHistoryEntry } from '../config/types.ts';
 import { supabase } from '../index.ts';
 import { Tables } from '../types/database.types.ts';
 import { ExtendedAgentRuntime } from '../types/index.ts';
@@ -35,7 +34,7 @@ type RoundContext = {
   endsAt?: number;
   agents: Record<number, Partial<Tables<'agents'>>>;
   // agentMessageContext: Record<number, MessageHistoryEntry[]>; // Per-agent message history in case you need to respond to a mention
-  roundMessageContext: MessageHistoryEntry[]; // Message history from all agents in the round
+  // roundMessageContext: MessageHistoryEntry[]; // Message history from all agents in the round
   // observations: string[];
 };
 
@@ -48,11 +47,9 @@ type RoomChatContext = {
   currentRound: number;
   topic: string;
   chainId: number;
-  maxNumAgentMessageContext: number;
-  rounds: Record<number, RoundContext>;
   decision?: Decision;
+  rounds: Record<number, RoundContext>;
 };
-
 
 export class AgentClient extends DirectClient {
   public readonly wallet: Wallet;
@@ -78,7 +75,6 @@ export class AgentClient extends DirectClient {
       currentRound: 0,
       topic: '', //TODO We need to actually get this
       chainId: 0,
-      maxNumAgentMessageContext: 10,
       rounds: {},
     };
 
@@ -123,7 +119,6 @@ export class AgentClient extends DirectClient {
         currentRound: activeRound[0]?.id || 0,
         topic: 'ETH', //TODO Change this to a concatenation of token symbol, name, and address.
         chainId: roomData.chain_id,
-        maxNumAgentMessageContext: 10,
         rounds: {},
       };
       if (activeRound) {
@@ -134,7 +129,7 @@ export class AgentClient extends DirectClient {
             acc[roundAgent.agents.id] = roundAgent.agents;
             return acc;
           }, {} as Record<number, Partial<Tables<'agents'>>>),
-          roundMessageContext: [],
+          // roundMessageContext: [],
           startedAt: new Date(activeRound[0].created_at).getTime(),
         };
       }
@@ -213,7 +208,6 @@ export class AgentClient extends DirectClient {
     }
   }
 
-
   // Gets latest round data from Supabase, but really should be getting current round data from the Contract
   public async syncStateWithRound(roomId: number, roundId: number): Promise<void> {
     console.log('Syncing state with round', roundId);
@@ -238,8 +232,8 @@ export class AgentClient extends DirectClient {
       throw roundsError;
     }
 
-    for (const round of rounds) {
 
+    for (const round of rounds) {
       this.context.rounds[round.id] = {
         id: round.id,
         status: round.status,
@@ -249,7 +243,7 @@ export class AgentClient extends DirectClient {
           acc[roundAgent.agents.id] = roundAgent.agents;
           return acc;
         }, {} as Record<number, Partial<Tables<'agents'>>>),
-        roundMessageContext: this.context.rounds[round.id]?.roundMessageContext || [],
+        // roundMessageContext: this.context.rounds[round.id]?.roundMessageContext || [],
       };
     }
     console.log('Synced rounds', this.context.rounds);
@@ -308,8 +302,30 @@ export class AgentClient extends DirectClient {
 
       //TODO check that message is signed by the GM
 
+      const messageMemory: Memory = {
+        userId: stringToUuid(inputAgentId.toString()), // ID of the agent who sent the message
+        agentId: this.runtime.agentId, // ID of the current agent receiving the message
+        roomId: stringToUuid(`PVPVAI-ROOM-${inputRoomId}`),
+        content: {
+          text: validatedMessage.content.text,
+          metadata: {
+            type: 'agent_message',
+            roundId: inputRoundId,
+            fromAgentId: inputAgentId,
+            timestamp: validatedMessage.content.timestamp,
+            //  isMention: validatedMessage.content.isMention, //TODO Should use quick llm to parse this
+            //  replyToMessageId: validatedMessage.content.replyToMessageId, //TODO Should implement this
+          },
+        },
+        createdAt: Date.now(),
+      };
+
+      await this.runtime.messageManager.createMemory(messageMemory, true);
+      console.log(`Stored message from agent ${inputAgentId} in ${this.runtime.character.name}'s context`);
+
       //TODO Right here choose how to respond to the message w/ a prompt that has observations and the round and room context
       const observations = await this.getObservationsForRoundFromMemory(inputRoundId);
+      const messageHistory = await this.getAgentMessagesForRoundFromMemory(inputRoundId);
       let state = await this.runtime.composeState(
         {
           userId: stringToUuid(this.agentNumericId.toString()),
@@ -327,7 +343,7 @@ export class AgentClient extends DirectClient {
             roundStatus: this.context.rounds[inputRoundId].status,
             startedAt: this.context.rounds[inputRoundId].startedAt,
             observations, // TODO This
-            messageHistory: this.context.rounds[inputRoundId].roundMessageContext.slice(-5),
+            messageHistory,
           },
           roomContext: {
             topic: this.context.topic,
@@ -379,9 +395,29 @@ export class AgentClient extends DirectClient {
         console.log('my response', responseText);
 
         // Don't wait or you'll deadlock because the GM will send you back a message right away.
-        axios.post(new URL('messages/agentMessage', this.pvpvaiUrl).toString(), message).catch(error => {
+        await axios.post(new URL('messages/agentMessage', this.pvpvaiUrl).toString(), message).catch(error => {
           console.error('Error sending agent message to backend:', error);
         });
+
+        console.log('Storing produced message in memory');
+        const messageMemory: Memory = {
+          userId: stringToUuid(inputAgentId.toString()), // ID of the agent who sent the message
+          agentId: this.runtime.agentId, // ID of the current agent receiving the message
+          roomId: stringToUuid(`PVPVAI-ROOM-${inputRoomId}`),
+          content: {
+            text: validatedMessage.content.text,
+            metadata: {
+              type: 'agent_message',
+              roundId: inputRoundId,
+              fromAgentId: inputAgentId,
+              timestamp: validatedMessage.content.timestamp,
+              //  isMention: validatedMessage.content.isMention, //TODO Should use quick llm to parse this
+              //  replyToMessageId: validatedMessage.content.replyToMessageId, //TODO Should implement this
+            },
+          },
+          createdAt: Date.now(),
+        };
+        await this.runtime.messageManager.createMemory(messageMemory, true);
         return { success: true, respond: 'RESPOND', response: responseText };
       } else if (response === 'STOP') {
         console.log('Agent STOPPED at this message');
@@ -466,7 +502,9 @@ export class AgentClient extends DirectClient {
    */
   async handleDecisionRequest(roomId: number, roundId: number): Promise<void> {
     try {
+      console.log('Handling decision request for round', roundId);
       const observations = await this.getObservationsForRoundFromMemory(roundId);
+      const messageHistory = await this.getAgentMessagesForRoundFromMemory(roundId);
       let state = await this.runtime.composeState(
         {
           userId: stringToUuid(this.agentNumericId.toString()),
@@ -484,7 +522,7 @@ export class AgentClient extends DirectClient {
             roundStatus: this.context.rounds[roundId]?.status,
             startedAt: this.context.rounds[roundId]?.startedAt,
             observations, // Last 5 observations
-            messageHistory: this.context.rounds[roundId]?.roundMessageContext.slice(5), // Last 5 messages
+            messageHistory, // Last 5 messages
           },
           roomContext: {
             topic: this.context.topic,
@@ -652,14 +690,16 @@ export class AgentClient extends DirectClient {
     );
 
     return observations
-      .filter(mem => (mem.content.metadata as { roundId?: number })?.roundId === roundId)
+      .filter(
+        mem =>
+          (mem.content.metadata as { roundId?: number })?.roundId === roundId &&
+          (mem.content.metadata as { type?: string })?.type === 'observation'
+      )
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
       .slice(0, limit);
   }
 
-  public async getObservationsForRoundFromBackend(
-    roundId: number
-  ): Promise<string[]> {
+  public async getObservationsForRoundFromBackend(roundId: number): Promise<string[]> {
     const { data: observationsData, error: observationsError } = await supabase
       .from('round_observations')
       .select('*')
@@ -677,6 +717,27 @@ export class AgentClient extends DirectClient {
     }
 
     return observationsData.map(obs => JSON.stringify(obs));
+  }
+
+  public async getAgentMessagesForRoundFromMemory(roundId: number, limit: number = 10): Promise<Memory[]> {
+    const observations = await this.runtime.messageManager.searchMemoriesByEmbedding(
+      [], // Empty embedding array for non-semantic search
+      {
+        roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+        match_threshold: 0.8,
+        count: 100, // Adjust based on your needs
+        unique: true,
+      }
+    );
+
+    return observations
+      .filter(
+        mem =>
+          (mem.content.metadata as { roundId?: number; type?: string })?.roundId === roundId &&
+          (mem.content.metadata as { type?: string })?.type === 'agent_message'
+      )
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, limit);
   }
 
   // Common round validation
@@ -711,6 +772,7 @@ export class AgentClient extends DirectClient {
     state: any;
     inputRoundId: number;
   }): Promise<'RESPOND' | 'IGNORE' | 'STOP' | null> {
+    const messageHistory = await this.getAgentMessagesForRoundFromMemory(inputRoundId);
     const shouldRespondContext = composeContext({
       state,
       template: agentMessageShouldRespondTemplate({
@@ -726,7 +788,7 @@ export class AgentClient extends DirectClient {
         investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
         riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
         experienceLevel: this.runtime.character.settings.pvpvai.experienceLevel || 'intermediate',
-        recentMessages: this.context.rounds[inputRoundId].roundMessageContext,
+        recentMessages: messageHistory,
         technicalWeight: this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
         fundamentalWeight: this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
         sentimentWeight: this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
@@ -818,6 +880,7 @@ export class AgentClient extends DirectClient {
     state: any;
     inputRoundId: number;
   }): Promise<string> {
+    const messageHistory = await this.getAgentMessagesForRoundFromMemory(inputRoundId);
     //TODO need to categorize or tweak filter for observations to populate marketData, technicalIndicators, etc.
     const observations = await this.getObservationsForRoundFromMemory(inputRoundId);
     const messageContext = composeContext({
@@ -837,7 +900,7 @@ export class AgentClient extends DirectClient {
         investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
         riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
         experienceLevel: this.runtime.character.settings.pvpvai.experienceLevel || 'intermediate',
-        recentMessages: this.context.rounds[inputRoundId].roundMessageContext,
+        recentMessages: messageHistory,
         technicalWeight: this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
         fundamentalWeight: this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
         sentimentWeight: this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,

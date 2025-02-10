@@ -1,9 +1,9 @@
-import { AutoClientInterface } from "@elizaos/client-auto";
-import { DiscordClientInterface } from "@elizaos/client-discord";
-import { TelegramClientInterface } from "@elizaos/client-telegram";
-import { TwitterClientInterface } from "@elizaos/client-twitter";
-import { IAgentRuntime } from "@elizaos/core";
-import { Character } from "../types/index.ts";
+import { AutoClientInterface } from '@elizaos/client-auto';
+import { DiscordClientInterface } from '@elizaos/client-discord';
+import { TelegramClientInterface } from '@elizaos/client-telegram';
+import { TwitterClientInterface } from '@elizaos/client-twitter';
+import { IAgentRuntime } from '@elizaos/core';
+import { Character } from '../types/index.ts';
 
 /**
  * Initializes all configured clients for an agent runtime
@@ -12,10 +12,7 @@ import { Character } from "../types/index.ts";
  * @param runtime - Agent runtime instance
  * @returns Array of initialized clients
  */
-export async function initializeClients(
-  character: Character,
-  runtime: IAgentRuntime
-) {
+export async function initializeClients(character: Character, runtime: IAgentRuntime) {
   // Initialize clients object on runtime if it doesn't exist
   runtime.clients = runtime.clients || {};
 
@@ -23,41 +20,41 @@ export async function initializeClients(
   const clients = [];
 
   // Get configured client types from character
-  const clientTypes = character.clients?.map((str) => str.toLowerCase()) || [];
+  const clientTypes = character.clients?.map(str => str.toLowerCase()) || [];
 
   // Initialize Auto client if configured
-  if (clientTypes.includes("auto")) {
+  if (clientTypes.includes('auto')) {
     const autoClient = await AutoClientInterface.start(runtime);
     if (autoClient) {
       clients.push(autoClient);
-      runtime.clients["auto"] = autoClient;
+      runtime.clients['auto'] = autoClient;
     }
   }
 
   // Initialize Discord client if configured
-  if (clientTypes.includes("discord")) {
+  if (clientTypes.includes('discord')) {
     const discordClient = await DiscordClientInterface.start(runtime);
     if (discordClient) {
       clients.push(discordClient);
-      runtime.clients["discord"] = discordClient;
+      runtime.clients['discord'] = discordClient;
     }
   }
 
   // Initialize Telegram client if configured
-  if (clientTypes.includes("telegram")) {
+  if (clientTypes.includes('telegram')) {
     const telegramClient = await TelegramClientInterface.start(runtime);
     if (telegramClient) {
       clients.push(telegramClient);
-      runtime.clients["telegram"] = telegramClient;
+      runtime.clients['telegram'] = telegramClient;
     }
   }
 
   // Initialize Twitter client if configured
-  if (clientTypes.includes("twitter")) {
+  if (clientTypes.includes('twitter')) {
     const twitterClient = await TwitterClientInterface.start(runtime);
     if (twitterClient) {
       clients.push(twitterClient);
-      runtime.clients["twitter"] = twitterClient;
+      runtime.clients['twitter'] = twitterClient;
     }
   }
 
@@ -84,7 +81,7 @@ export async function initializeClients(
   }
 
   // Log initialized clients
-  console.log("Initialized clients for", character.name, ":", {
+  console.log('Initialized clients for', character.name, ':', {
     total: clients.length,
     types: Object.keys(runtime.clients),
   });
@@ -93,10 +90,11 @@ export async function initializeClients(
 }
 
 // Export additional components
-export { AgentClient } from "./AgentClient.ts";
+export { ContractEventListener } from './ContractEventListener.ts';
+export { AgentClient } from './AgentClient.ts';
 export {
   createPVPVAIClient,
   PVPVAIIntegration,
   type ClientInitializationConfig as Config,
-} from "./PVPVAIIntegration.ts";
+} from './PVPVAIIntegration.ts';
 // export { SharedWebSocket, type WebSocketConfig } from "./shared-websocket.ts";
