@@ -167,6 +167,12 @@ async function startAgent(
             directClient.app.post("/forceRoundSync", async (req, res) => {
               try {
                 const { roomId, roundId } = req.body;
+                console.log(
+                  "Syncing state with room",
+                  roomId,
+                  "round",
+                  roundId
+                );
                 const context = pvpvaiClient
                   ?.getClient()
                   ?.syncStateWithRound(roomId, roundId);

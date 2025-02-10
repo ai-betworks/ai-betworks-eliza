@@ -1,10 +1,13 @@
 import { ethers } from "ethers";
 import { supabase } from "../index.ts";
+import { roomAbi } from "../types/contract.types.ts";
 import type {
   ExtendedAgentRuntime,
   Character as ExtendedCharacter,
 } from "../types/index.ts";
 import { AgentClient } from "./AgentClient.ts";
+import { ContractEventListener } from "./ContractEventListener";
+
 export const HARDCODED_ROOM_ID = Number(process.env.ROOM_ID) || 290;
 
 export interface ClientInitializationConfig {
@@ -22,8 +25,7 @@ export class PVPVAIIntegration {
   private agentId: number;
   private pvpvaiServerUrl: string;
   private roomId: number = HARDCODED_ROOM_ID; //Temporarily hardcoded
-  private port: number;
-  private wallet: ethers.Wallet;
+  private eventListener: ContractEventListener | null = null;
 
   constructor(
     runtime: ExtendedAgentRuntime,
@@ -46,7 +48,8 @@ export class PVPVAIIntegration {
     }
     this.agentId = agentId;
 
-    this.pvpvaiServerUrl = char.settings?.pvpvai?.pvpvaiServerUrl || config.pvpvaiUrl;
+    this.pvpvaiServerUrl =
+      char.settings?.pvpvai?.pvpvaiServerUrl || config.pvpvaiUrl;
   }
 
   public async initialize(): Promise<void> {
@@ -89,6 +92,31 @@ export class PVPVAIIntegration {
 
     // Connect to room - backend will handle round assignment
     await this.client.initializeRoomContext(this.roomId);
+
+    // Initialize contract event listener
+    const { data: room, error: roomError } = await supabase
+      .from("rooms")
+      .select("contract_address, chain_id")
+      .eq("id", this.roomId)
+      .single();
+
+    if (roomError) {
+      throw roomError;
+    }
+
+    if (room.contract_address) {
+      // You'll need to provide the ABI and RPC URL based on your setup
+      const rpcUrl = this.getRpcUrlForChain(room.chain_id);
+
+      this.eventListener = new ContractEventListener(
+        room.contract_address,
+        roomAbi,
+        rpcUrl,
+        this.client
+      );
+
+      await this.eventListener.startListening();
+    }
   }
 
   private async getAgentConfig(agentId?: number) {
@@ -109,7 +137,46 @@ export class PVPVAIIntegration {
   }
 
   public close(): void {
+    if (this.eventListener) {
+      this.eventListener.stopListening();
+    }
     this.client.stop();
+  }
+
+  private getRpcUrlForChain(chainId: number): string {
+    // Add logic to return appropriate RPC URL based on chain ID
+    // Example:
+    switch (chainId) {
+      case 1:
+        return process.env.ETH_MAINNET_RPC_URL || "";
+      case 5:
+        return process.env.ETH_GOERLI_RPC_URL || "";
+      case 11155111:
+        return process.env.ETH_SEPOLIA_RPC_URL || "";
+      case 8453:
+        return process.env.ETH_BASE_MAINNET_RPC_URL || "";
+      case 84532:
+        return process.env.ETH_BASE_SEPOLIA_RPC_URL || "";
+      case 137:
+        return process.env.ETH_POLYGON_MAINNET_RPC_URL || "";
+      case 80001:
+        return process.env.ETH_POLYGON_MUMBAI_RPC_URL || "";
+      case 42161:
+        return process.env.ETH_ARBITRUM_MAINNET_RPC_URL || "";
+      case 421611:
+        return process.env.ETH_ARBITRUM_SEPOLIA_RPC_URL || "";
+      case 10:
+        return process.env.ETH_OPTIMISM_MAINNET_RPC_URL || "";
+      case 420:
+        return process.env.ETH_OPTIMISM_SEPOLIA_RPC_URL || "";
+      case 1329:
+        return process.env.ETH_ZKSYNC_MAINNET_RPC_URL || "";
+      case 1328:
+        return process.env.ETH_ZKSYNC_SEPOLIA_RPC_URL || "";
+
+      default:
+        throw new Error(`No RPC URL configured for chain ID ${chainId}`);
+    }
   }
 }
 

@@ -434,7 +434,7 @@ export type Database = {
           pvp_status_effects: Json | null
           room_id: number
           round_config: Json | null
-          status: Database["public"]["Enums"]["round_status"]
+            status: Database["public"]["Enums"]["round_status"]
           updated_at: string
         }
         Insert: {
