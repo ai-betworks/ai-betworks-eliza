@@ -219,7 +219,7 @@ export class AgentClient extends DirectClient {
     console.log('Syncing state with round', roundId);
     console.log('Context', this.context);
     console.log('Room ID', roomId);
-    
+
     // First get rounds data
     const { data: rounds, error: roundsError } = await supabase
       .from('rounds')
@@ -715,13 +715,8 @@ export class AgentClient extends DirectClient {
       state,
       template: agentMessageShouldRespondTemplate({
         agentName: this.runtime.character.name,
-        bio: this.runtime.character.bio,
         knowledge: this.runtime.character.knowledge,
         personality: this.runtime.character.lore
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 3)
-          .join('\n'),
-        conversationStyle: this.runtime.character.messageExamples
           .sort(() => 0.5 - Math.random())
           .slice(0, 3)
           .join('\n'),
@@ -847,9 +842,6 @@ export class AgentClient extends DirectClient {
         fundamentalWeight: this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
         sentimentWeight: this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
         riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
-        marketData: observations,
-        technicalIndicators: observations,
-        newsFeeds: observations,
         onchainMetrics: observations,
         otherAgents: Object.values(this.context.rounds[inputRoundId].agents)
           .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary} `)

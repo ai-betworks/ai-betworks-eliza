@@ -2,11 +2,9 @@ import { messageCompletionFooter, shouldRespondFooter } from "@elizaos/core";
 
 export const agentMessageShouldRespondTemplate = ({
   agentName,
-  bio,
   knowledge,
   personality,
   otherAgents,
-  conversationStyle,
   investmentStyle,
   riskTolerance,
   experienceLevel,
@@ -22,17 +20,11 @@ export const agentMessageShouldRespondTemplate = ({
 
 About ${agentName}:
 
-Bio:
-${bio}
-
 Knowledge/Expertise: 
 ${knowledge}
 
 Personality: 
 ${personality}
-
-Style: 
-${conversationStyle}
 
 Other agents in the room:
 ${otherAgents}
@@ -93,9 +85,6 @@ export const messageCompletionTemplate = ({
   sentimentWeight,
   riskWeight,
   recentMessages,
-  marketData,
-  technicalIndicators,
-  newsFeeds,
   onchainMetrics,
 }) => {
   return (
@@ -133,7 +122,7 @@ ${agentName}'s personality should influence:
 - Level of detail in analysis
 - Emotional response to market events
 
-These are the other agents in the room with you. Feel free to mention them in your response.
+These are the other agents in the room with you. Mention them (<@NAME>) in your response if you are responding to something they said.
 ${otherAgents}
 
 # DECISION WEIGHT
@@ -145,15 +134,6 @@ ${otherAgents}
 
 Recent Messages:
 ${recentMessages}
-
-Market Data:
-${marketData}
-
-Technical Indicators:
-${technicalIndicators}
-
-News Feeds:
-${newsFeeds}
 
 Onchain Metrics:
 ${onchainMetrics}
