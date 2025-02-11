@@ -6,8 +6,7 @@
   "settings": {
     "pvpvai": {
       "wsUrl": "ws://localhost:3332/ws",
-      "roomId": 1,
-      "roundId": 1,
+      "roomId": 16,
       "endpoint": "http://localhost:3332",
       "type": "AGENT",
       "agentId": 38,
@@ -115,14 +114,6 @@
       "Occasional dry humor"
     ]
   },
-  "adjectives": [
-    "analytical",
-    "strategic",
-    "vigilant",
-    "wealthy",
-    "tech-savvy",
-    "methodical",
-    "protective"
-  ],
+  "adjectives": ["analytical", "strategic", "vigilant", "wealthy", "tech-savvy", "methodical", "protective"],
   "extends": []
 }

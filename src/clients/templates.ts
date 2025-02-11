@@ -8,11 +8,6 @@ export const agentMessageShouldRespondTemplate = ({
   investmentStyle,
   riskTolerance,
   experienceLevel,
-  recentMessages,
-  technicalWeight,
-  fundamentalWeight,
-  sentimentWeight,
-  riskWeight,
 }) => {
   return (
     `
@@ -33,7 +28,6 @@ Investment Approach:
 - Style: ${investmentStyle}
 - Risk: ${riskTolerance}
 - Experience: ${experienceLevel}
-- Weights: Technical ${technicalWeight}, Fundamental ${fundamentalWeight}, Sentiment ${sentimentWeight}, Risk ${riskWeight}
 
 # INSTRUCTIONS: Evaluate whether ${agentName} should contribute to the ongoing discussion. Respond only with [RESPOND], [IGNORE], or [STOP].
 
@@ -60,9 +54,6 @@ STOP when:
 - Final investment decision has been made
 - Discussion has clearly concluded
 - Asked to stop participating
-
-Recent Messages:
-${recentMessages}
 
 # Instruction: Based on ${agentName}'s profile and context, reply only with [RESPOND], [IGNORE], or [STOP].
 ` + shouldRespondFooter
@@ -122,7 +113,7 @@ ${agentName}'s personality should influence:
 - Level of detail in analysis
 - Emotional response to market events
 
-These are the other agents in the room with you. Mention them (<@NAME>) in your response if you are responding to something they said.
+These are the other agents in the room with you. Feel free to ocassionally tap into their expertise.Mention them (<@NAME>) in your response if you are responding to something they said.
 ${otherAgents}
 
 # DECISION WEIGHT

@@ -1,8 +1,10 @@
 import { elizaLogger } from '@elizaos/core';
+import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
-import { supabase } from '../index';
-import { Tables } from '../types/database.types';
-import { AgentClient } from './AgentClient';
+import { AgentClient } from './clients/AgentClient';
+import { Database, Tables } from './types/database.types';
+
+export const supabase = createClient<Database>(process.env.PVPVAI_SUPABASE_URL!, process.env.PVPVAI_SUPABASE_ANON_KEY!);
 
 export class ContractEventListener {
   private provider: ethers.Provider;
@@ -11,6 +13,8 @@ export class ContractEventListener {
   private isListening: boolean = false;
 
   constructor(contractAddress: string, contractABI: any, rpcUrl: string, client: AgentClient) {
+    console.log('ContractEventListener constructor', contractAddress, rpcUrl);
+
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.contract = new ethers.Contract(contractAddress, contractABI, this.provider);
     this.client = client;
@@ -44,10 +48,12 @@ export class ContractEventListener {
     this.isListening = true;
 
     try {
+      console.log('STARTING LISTENING FOR ALL CONTRACT EVENTS');
       // Listen for RoundStarted events
       this.contract.on(
         'RoundStarted',
         async (roundId: number, startBlockTimestamp: number, endBlockTimestamp: number) => {
+          console.log('NEW ROUND STARTED: ', roundId, startBlockTimestamp, endBlockTimestamp);
           elizaLogger.log(`New round started: ${roundId} at ${startBlockTimestamp}, ending at ${endBlockTimestamp}`);
 
           try {
@@ -61,7 +67,7 @@ export class ContractEventListener {
             this.client.context.currentRound = roundId;
             this.client.context.rounds[roundId] = {
               id: roundId,
-              status: 'OPEN', //Is this open or starting?ccc
+              status: 'OPEN', //Is this open or starting?
               startedAt: startBlockTimestamp,
               endsAt: endBlockTimestamp,
               agents: agents,

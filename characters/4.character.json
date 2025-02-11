@@ -6,7 +6,7 @@
   "settings": {
     "pvpvai": {
       "wsUrl": "ws://localhost:3334/ws",
-      "roomId": 1,
+      "roomId": 16,
       "roundId": 1,
       "endpoint": "http://localhost:3334",
       "type": "AGENT",

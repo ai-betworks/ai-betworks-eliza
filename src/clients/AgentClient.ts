@@ -136,7 +136,7 @@ export class AgentClient extends DirectClient {
 
       // Engage in the discussion immediately upon initialization if the active round is open
       console.log('activeRound', activeRound);
-      if (activeRound && (activeRound[0].status === 'OPEN' || activeRound[0].status === 'STARTING')) {
+      if (activeRound /*&& (activeRound[0].status === 'OPEN' || activeRound[0].status === 'STARTING')*/) {
         const activeRoundId = activeRound[0].id;
         let state = await this.runtime.composeState(
           {
@@ -158,14 +158,13 @@ export class AgentClient extends DirectClient {
               chainId: this.context.chainId,
               currentRound: this.context.currentRound,
             },
-            senderAgent: this.context.rounds[activeRoundId].agents[this.agentNumericId],
           }
         );
         const announcePresenceContext = composeContext({
           state,
           template: `You have just joined the discussion. You are ${this.runtime.character.name}. Your ID is: ${
             this.agentNumericId
-          }). 
+          }).
           The topic of the discussion is ${
             this.context.topic
           }. You are going to engage in a dicussion with the other agents to decide if you should buy, sell, or hold ${
@@ -183,7 +182,7 @@ export class AgentClient extends DirectClient {
             .map(agent => `${agent.display_name} (${agent.id})`)
             .join(', ')}
 
-          Scan the contents of the context for mentions of you or any discussions that are within your expertise. 
+          Scan the contents of the context for mentions of you or any discussions that are within your expertise.
           If you find any, respond by mentioning the agent who posted the message unless it was you.
 
           Now that you are up to speed, announce to the other agents in the room that you are here and ready to start the discussion.
@@ -192,7 +191,7 @@ export class AgentClient extends DirectClient {
         const response = await generateText({
           runtime: this.runtime,
           context: announcePresenceContext,
-          modelClass: ModelClass.LARGE,
+          modelClass: ModelClass.MEDIUM,
         });
         console.log('Announce presence response:', response);
         await this.sendAgentMessageToBackend({ text: response });
@@ -231,7 +230,6 @@ export class AgentClient extends DirectClient {
       console.error('Error syncing current round state:', roundsError);
       throw roundsError;
     }
-
 
     for (const round of rounds) {
       this.context.rounds[round.id] = {
@@ -274,7 +272,7 @@ export class AgentClient extends DirectClient {
         console.log("received message from room that doesn't match context", inputRoomId, 'expected', this.roomId);
         return;
       }
-      const { valid, errorMessage } = this.validRoundForContextUpdate(inputRoundId, true);
+      const { valid, errorMessage } = this.validRoundForContextUpdate(inputRoundId, false);
       if (!valid) {
         console.log(`Round ID in message (${inputRoundId}) is not valid for a context update because ${errorMessage}`);
         return { success: false, errorMessage };
@@ -320,7 +318,7 @@ export class AgentClient extends DirectClient {
         createdAt: Date.now(),
       };
 
-      await this.runtime.messageManager.createMemory(messageMemory, true);
+      await this.runtime.messageManager.createMemory(messageMemory);
       console.log(`Stored message from agent ${inputAgentId} in ${this.runtime.character.name}'s context`);
 
       //TODO Right here choose how to respond to the message w/ a prompt that has observations and the round and room context
@@ -358,9 +356,11 @@ export class AgentClient extends DirectClient {
         }
       );
 
+      console.log('agent message input state', state);
+
       const response = await this.generateShouldRespond({
         runtime: this.runtime,
-        modelClass: ModelClass.LARGE,
+        modelClass: ModelClass.SMALL,
         state,
         inputRoundId,
       });
@@ -373,7 +373,7 @@ export class AgentClient extends DirectClient {
 
         const responseText = await this.generateAgentMessageResponse({
           runtime: this.runtime,
-          modelClass: ModelClass.LARGE,
+          modelClass: ModelClass.MEDIUM,
           state,
           inputRoundId,
         });
@@ -417,7 +417,7 @@ export class AgentClient extends DirectClient {
           },
           createdAt: Date.now(),
         };
-        await this.runtime.messageManager.createMemory(messageMemory, true);
+        await this.runtime.messageManager.createMemory(messageMemory);
         return { success: true, respond: 'RESPOND', response: responseText };
       } else if (response === 'STOP') {
         console.log('Agent STOPPED at this message');
@@ -482,7 +482,7 @@ export class AgentClient extends DirectClient {
       };
 
       // Store in memory manager
-      await this.runtime.messageManager.createMemory(observationMemory, true);
+      await this.runtime.messageManager.createMemory(observationMemory);
 
       console.log(
         `Added observation to ${this.runtime.character.name}'s (${this.agentNumericId}) context:`,
@@ -679,24 +679,25 @@ export class AgentClient extends DirectClient {
   }
 
   public async getObservationsForRoundFromMemory(roundId: number, limit: number = 10): Promise<Memory[]> {
-    const observations = await this.runtime.messageManager.searchMemoriesByEmbedding(
-      [], // Empty embedding array for non-semantic search
-      {
+    try {
+      // Use a simple text query instead of embedding search
+      const observations = await this.runtime.messageManager.getMemories({
         roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
-        match_threshold: 0.8,
-        count: 100, // Adjust based on your needs
-        unique: true,
-      }
-    );
+        count: 100, // Get more initially to filter
+      });
 
-    return observations
-      .filter(
-        mem =>
-          (mem.content.metadata as { roundId?: number })?.roundId === roundId &&
-          (mem.content.metadata as { type?: string })?.type === 'observation'
-      )
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, limit);
+      return observations
+        .filter(
+          mem =>
+            (mem.content.metadata as { roundId?: number })?.roundId === roundId &&
+            (mem.content.metadata as { type?: string })?.type === 'observation'
+        )
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        .slice(0, limit);
+    } catch (error) {
+      console.error('Error getting observations from memory:', error);
+      return [];
+    }
   }
 
   public async getObservationsForRoundFromBackend(roundId: number): Promise<string[]> {
@@ -720,24 +721,25 @@ export class AgentClient extends DirectClient {
   }
 
   public async getAgentMessagesForRoundFromMemory(roundId: number, limit: number = 10): Promise<Memory[]> {
-    const observations = await this.runtime.messageManager.searchMemoriesByEmbedding(
-      [], // Empty embedding array for non-semantic search
-      {
+    try {
+      // Use a simple text query instead of embedding search
+      const messages = await this.runtime.messageManager.getMemories({
         roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
-        match_threshold: 0.8,
-        count: 100, // Adjust based on your needs
-        unique: true,
-      }
-    );
+        count: 100, // Get more initially to filter
+      });
 
-    return observations
-      .filter(
-        mem =>
-          (mem.content.metadata as { roundId?: number; type?: string })?.roundId === roundId &&
-          (mem.content.metadata as { type?: string })?.type === 'agent_message'
-      )
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, limit);
+      return messages
+        .filter(
+          mem =>
+            (mem.content.metadata as { roundId?: number; type?: string })?.roundId === roundId &&
+            (mem.content.metadata as { type?: string })?.type === 'agent_message'
+        )
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        .slice(0, limit);
+    } catch (error) {
+      console.error('Error getting agent messages from memory:', error);
+      return [];
+    }
   }
 
   // Common round validation
@@ -754,9 +756,9 @@ export class AgentClient extends DirectClient {
     if (!this.context.rounds[roundId]) {
       return { valid: false, errorMessage: 'Round does not exist in context' };
     }
-    if (this.context.rounds[roundId].status !== 'OPEN') {
-      return { valid: false, errorMessage: 'Round is not open' };
-    }
+    // if (this.context.rounds[roundId].status !== 'OPEN') {
+    //   return { valid: false, errorMessage: 'Round is not open' };
+    // }
 
     return { valid: true };
   }
@@ -778,25 +780,22 @@ export class AgentClient extends DirectClient {
       template: agentMessageShouldRespondTemplate({
         agentName: this.runtime.character.name,
         knowledge: this.runtime.character.knowledge,
-        personality: this.runtime.character.lore
+        personality: `• ${this.runtime.character.lore
           .sort(() => 0.5 - Math.random())
           .slice(0, 3)
-          .join('\n'),
-        otherAgents: Object.values(this.context.rounds[inputRoundId].agents)
-          .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary} `)
-          .join('\n'),
+          .join('\n• ')}`,
+        otherAgents: `• ${Object.values(this.context.rounds[inputRoundId].agents)
+          .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary}`)
+          .join('\n• ')}`,
         investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
         riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
         experienceLevel: this.runtime.character.settings.pvpvai.experienceLevel || 'intermediate',
-        recentMessages: messageHistory,
-        technicalWeight: this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
-        fundamentalWeight: this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
-        sentimentWeight: this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
-        riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
       }),
     });
 
-    let retryDelay = 3000;
+    console.log('shouldRespondContext', shouldRespondContext);
+
+    let retryDelay = 5000;
     while (true) {
       try {
         elizaLogger.debug('Attempting to generate text with context:', shouldRespondContext);
@@ -881,7 +880,6 @@ export class AgentClient extends DirectClient {
     inputRoundId: number;
   }): Promise<string> {
     const messageHistory = await this.getAgentMessagesForRoundFromMemory(inputRoundId);
-    //TODO need to categorize or tweak filter for observations to populate marketData, technicalIndicators, etc.
     const observations = await this.getObservationsForRoundFromMemory(inputRoundId);
     const messageContext = composeContext({
       state,
@@ -889,34 +887,38 @@ export class AgentClient extends DirectClient {
         agentName: this.runtime.character.name,
         bio: this.runtime.character.bio,
         knowledge: this.runtime.character.knowledge,
-        personality: this.runtime.character.lore
+        personality: `• ${this.runtime.character.lore
           .sort(() => 0.5 - Math.random())
           .slice(0, 3)
-          .join('\n'),
-        speakingStyle: this.runtime.character.messageExamples
+          .join('\n• ')}`,
+        speakingStyle: `• ${this.runtime.character.messageExamples
           .sort(() => 0.5 - Math.random())
           .slice(0, 3)
-          .join('\n'),
+          .join('\n• ')}`,
         investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
         riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
         experienceLevel: this.runtime.character.settings.pvpvai.experienceLevel || 'intermediate',
-        recentMessages: messageHistory,
+        recentMessages: `• ${messageHistory.map(m => m.content.text).join('\n• ')}`,
         technicalWeight: this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
         fundamentalWeight: this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
         sentimentWeight: this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
         riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
-        onchainMetrics: observations,
-        otherAgents: Object.values(this.context.rounds[inputRoundId].agents)
-          .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary} `)
-          .join('\n'),
+        onchainMetrics: `• ${observations.map(o => o.content.text).join('\n• ')}`,
+        otherAgents: `• ${Object.values(this.context.rounds[inputRoundId].agents)
+          .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary}`)
+          .join('\n• ')}`,
       }),
     });
+
+    console.log('messageContext', messageContext);
 
     const response = await generateMessageResponse({
       runtime,
       context: messageContext,
       modelClass,
     });
+
+    console.log('response', response);
 
     return response.text;
   }

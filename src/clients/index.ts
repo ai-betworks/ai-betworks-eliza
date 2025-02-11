@@ -90,7 +90,7 @@ export async function initializeClients(character: Character, runtime: IAgentRun
 }
 
 // Export additional components
-export { ContractEventListener } from './ContractEventListener.ts';
+export { ContractEventListener } from '../ContractEventListener.ts';
 export { AgentClient } from './AgentClient.ts';
 export {
   createPVPVAIClient,
