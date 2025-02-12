@@ -5,7 +5,7 @@ import { roomAbi } from '../types/contract.types.ts';
 import type { ExtendedAgentRuntime, Character as ExtendedCharacter } from '../types/index.ts';
 import { AgentClient } from './AgentClient.ts';
 
-export const HARDCODED_ROOM_ID = 16;
+export const HARDCODED_ROOM_ID = 17;
 
 export interface ClientInitializationConfig {
   pvpvaiUrl: string;

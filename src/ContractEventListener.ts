@@ -48,7 +48,7 @@ export class ContractEventListener {
     this.isListening = true;
 
     try {
-      console.log('STARTING LISTENING FOR ALL CONTRACT EVENTS');
+      console.log('STARTING LISTENING FOR ALL CONTRACT EVENTS ON CONTRACT: ', this.contract);
       // Listen for RoundStarted events
       this.contract.on(
         'RoundStarted',
@@ -72,6 +72,7 @@ export class ContractEventListener {
               endsAt: endBlockTimestamp,
               agents: agents,
             };
+            console.log('Client context after RoundStarted event:', this.client.context);
           } catch (error) {
             elizaLogger.error('Error processing RoundStarted event:', error);
           }

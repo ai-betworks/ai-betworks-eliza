@@ -9,6 +9,7 @@ import {
   ModelClass,
   parseShouldRespondFromText,
   stringToUuid,
+  trimTokens,
 } from '@elizaos/core';
 import axios, { AxiosError } from 'axios';
 import { Wallet } from 'ethers';
@@ -29,10 +30,12 @@ import { agentMessageShouldRespondTemplate, messageCompletionTemplate } from './
 
 type RoundContext = {
   id: number;
+  room_id: number;
   status?: 'STARTING' | 'CLOSING' | 'OPEN' | 'CLOSED' | 'CANCELLED';
   startedAt?: number;
   endsAt?: number;
   agents: Record<number, Partial<Tables<'agents'>>>;
+  decisions?: Record<number, Decision>;
   // agentMessageContext: Record<number, MessageHistoryEntry[]>; // Per-agent message history in case you need to respond to a mention
   // roundMessageContext: MessageHistoryEntry[]; // Message history from all agents in the round
   // observations: string[];
@@ -55,9 +58,10 @@ export class AgentClient extends DirectClient {
   public readonly wallet: Wallet;
   public readonly agentNumericId: number;
   public readonly pvpvaiUrl: string;
-  public roomId: number;
+  public roomId: number = HARDCODED_ROOM_ID;
   public context: RoomChatContext;
   public runtime: ExtendedAgentRuntime;
+  public readonly maxInMemoryRoundStorage: number = 5;
 
   private readonly signatureCache: NodeCache;
   private lastResponseTime: number = 0;
@@ -70,7 +74,6 @@ export class AgentClient extends DirectClient {
     this.wallet = wallet;
     this.agentNumericId = agentNumericId;
     this.runtime = runtime;
-    this.roomId = HARDCODED_ROOM_ID;
     this.context = {
       currentRound: 0,
       topic: '', //TODO We need to actually get this
@@ -82,6 +85,137 @@ export class AgentClient extends DirectClient {
       stdTTL: this.SIGNATURE_TTL,
       checkperiod: 120, // Check for expired items every 2 minutes
     });
+
+    console.log('Starting to listen to rounds table');
+    // Listen to inserts
+    supabase
+      .channel('rounds')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'rounds' }, this.handleRoundInserts)
+      .subscribe();
+    supabase
+      .channel('rounds2')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rounds' }, this.handleRoundUpdates)
+      .subscribe();
+    supabase
+      .channel('rounds3')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'round_agents' }, this.handleRoundAgentsUpdates)
+      .subscribe();
+    supabase
+      .channel('rooms')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms' }, this.handleRoomUpdates)
+      .subscribe();
+    console.log('Room ID', this.roomId);
+  }
+
+  //Process for starting a new round
+  async handleRoundInserts(payload) {
+    try {
+      if (payload.new.room_id !== HARDCODED_ROOM_ID) {
+        console.log(
+          `Received round insert for room that does not match context, ignoring (round: ${payload.new.id}, expected ${HARDCODED_ROOM_ID}, received ${payload.new.room_id})`
+        );
+        return;
+      }
+      const roundId = payload.new.id;
+      const roundStatus = payload.new.status;
+
+      // Get agents for this round
+      const { data: roundAgents, error: roundAgentsError } = await supabase
+        .from('round_agents')
+        .select(`*, agents(*)`)
+        .eq('round_id', roundId);
+
+      if (roundAgentsError) {
+        console.error('Error getting round agents:', roundAgentsError);
+        return;
+      }
+
+      // Create new rounds object, starting with existing rounds
+      let updatedRounds = this.context?.rounds || {};
+
+      // Check if we need to remove oldest round
+      if (Object.keys(updatedRounds).length >= this.maxInMemoryRoundStorage) {
+        const oldestRoundId = Math.min(...Object.keys(updatedRounds).map(Number));
+        delete updatedRounds[oldestRoundId];
+        console.log(`Removed oldest round ${oldestRoundId} from context due to storage limit`);
+      }
+
+      // Add new round
+      updatedRounds[roundId] = {
+        id: roundId,
+        room_id: payload.new.room_id,
+        status: roundStatus,
+        startedAt: new Date(payload.new.created_at).getTime(),
+        endsAt: 0, // TODO: Calculate from round_config.round_duration
+        agents: roundAgents.reduce(
+          (acc, roundAgent) => ({
+            ...acc,
+            [roundAgent.agents.id]: roundAgent.agents,
+          }),
+          {}
+        ),
+      };
+
+      // Update context with new rounds object
+      this.context = {
+        ...this.context,
+        currentRound: roundId,
+        rounds: updatedRounds,
+      };
+
+      const introMessage = await this.generateIntroMessage(roundId);
+      console.log(`Updated context for new round ${roundId}:`, this.context.rounds[roundId]);
+    } catch (error) {
+      console.error('Error handling round insert:', error);
+    }
+  }
+
+  
+  // Process for updating local round context w/ status changes in database
+  async handleRoundUpdates(payload) {
+    try {
+      if (payload.new.room_id !== HARDCODED_ROOM_ID) {
+        console.log(
+          `Received round update for room that does not match context, ignoring (round: ${payload.new.id}, expected ${HARDCODED_ROOM_ID}, received ${payload.new.room_id})`
+        );
+        return;
+      }
+      const roundId = payload.new.id;
+      const newStatus = payload.new.status;
+      const newAgents = this.context?.rounds?.[roundId]?.agents || {}; //TODO hack for type error
+
+      // Update context, preserving existing values
+      this.context = {
+        ...this.context,
+        rounds: {
+          ...(this.context?.rounds || {}),
+          [roundId]: {
+            ...(this.context?.rounds?.[roundId] || {}),
+            id: roundId,
+            room_id: payload.new.room_id,
+            status: newStatus,
+            agents: newAgents,
+          },
+        },
+      };
+
+      console.log(`Updated status for round ${roundId} to ${newStatus}`);
+    } catch (error) {
+      console.error('Error handling round update:', error);
+    }
+  }
+
+  // Process for updating local round context w/ agent changes in database, specifically targetting the "outcomes" column
+  async handleRoundAgentsUpdates(payload) {
+    console.log('Change received on rounds_agents table (update)!', payload);
+    const roundId = payload.new.round_id;
+    const agentId = payload.new.agent_id;
+    const outcome = payload.new.outcomes;
+    this.context.rounds[roundId].decisions[agentId] = outcome;
+  }
+
+  async handleRoomUpdates(payload) {
+    // console.log('Change received on rooms table (update)!', payload);
   }
 
   public async initializeRoomContext(roomId: number): Promise<void> {
@@ -124,6 +258,7 @@ export class AgentClient extends DirectClient {
       if (activeRound) {
         this.context.rounds[activeRound[0].id] = {
           id: activeRound[0].id,
+          room_id: activeRound[0].room_id,
           endsAt: 999, //TODO Shouldn't be hardcoded
           agents: activeRound[0].round_agents.reduce((acc, roundAgent) => {
             acc[roundAgent.agents.id] = roundAgent.agents;
@@ -138,61 +273,7 @@ export class AgentClient extends DirectClient {
       console.log('activeRound', activeRound);
       if (activeRound /*&& (activeRound[0].status === 'OPEN' || activeRound[0].status === 'STARTING')*/) {
         const activeRoundId = activeRound[0].id;
-        let state = await this.runtime.composeState(
-          {
-            userId: stringToUuid(this.agentNumericId.toString()),
-            agentId: stringToUuid(this.agentNumericId.toString()),
-            roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
-            content: {
-              text: this.context.topic,
-              source: 'PVPVAI',
-            },
-          },
-          {
-            // Additional context
-            roundContext: {
-              ...this.context.rounds[activeRoundId],
-            },
-            roomContext: {
-              topic: this.context.topic,
-              chainId: this.context.chainId,
-              currentRound: this.context.currentRound,
-            },
-          }
-        );
-        const announcePresenceContext = composeContext({
-          state,
-          template: `You have just joined the discussion. You are ${this.runtime.character.name}. Your ID is: ${
-            this.agentNumericId
-          }).
-          The topic of the discussion is ${
-            this.context.topic
-          }. You are going to engage in a dicussion with the other agents to decide if you should buy, sell, or hold ${
-            this.context.topic
-          }.
-
-          Here is the most recent context we have in the discussion:
-          ${JSON.stringify(this.context.rounds[activeRoundId])}
-
-          Your expertise:
-          ${this.runtime.character.knowledge}.
-
-          The other agents in the room are:
-          ${Object.values(this.context.rounds[activeRoundId].agents)
-            .map(agent => `${agent.display_name} (${agent.id})`)
-            .join(', ')}
-
-          Scan the contents of the context for mentions of you or any discussions that are within your expertise.
-          If you find any, respond by mentioning the agent who posted the message unless it was you.
-
-          Now that you are up to speed, announce to the other agents in the room that you are here and ready to start the discussion.
-          `,
-        });
-        const response = await generateText({
-          runtime: this.runtime,
-          context: announcePresenceContext,
-          modelClass: ModelClass.MEDIUM,
-        });
+        const response = await this.generateIntroMessage(activeRoundId);
         console.log('Announce presence response:', response);
         await this.sendAgentMessageToBackend({ text: response });
       }
@@ -921,5 +1002,69 @@ export class AgentClient extends DirectClient {
     console.log('response', response);
 
     return response.text;
+  }
+
+  private async generateIntroMessage(activeRoundId: number): Promise<string> {
+    let state = await this.runtime.composeState(
+      {
+        userId: stringToUuid(this.agentNumericId.toString()),
+        agentId: stringToUuid(this.agentNumericId.toString()),
+        roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+        content: {
+          text: this.context.topic,
+          source: 'PVPVAI',
+        },
+      },
+      {
+        // Additional context
+        roundContext: {
+          ...this.context.rounds[activeRoundId],
+        },
+        roomContext: {
+          topic: this.context.topic,
+          chainId: this.context.chainId,
+          currentRound: this.context.currentRound,
+        },
+      }
+    );
+    const announcePresenceContext = composeContext({
+      state,
+      template: `You have just joined the discussion. You are ${this.runtime.character.name}. Your ID is: ${
+        this.agentNumericId
+      }).
+      The topic of the discussion is ${
+        this.context.topic
+      }. You are going to engage in a dicussion with the other agents to decide if you should buy, sell, or hold ${
+        this.context.topic
+      }.
+
+      Here is the most recent context we have in the discussion:
+      ${JSON.stringify(this.context.rounds[activeRoundId])}
+
+      These are the decisions made in the previous round:
+      TODO
+
+      Your expertise:
+      ${this.runtime.character.knowledge}.
+
+      The other agents in the room are the following, you should mention at least one of them ("<@Agent Name>" ) with an icebreaker question:
+      ${Object.values(this.context.rounds[activeRoundId].agents)
+        .map(agent => `${agent.display_name} (${agent.id})`)
+        .join(', ')}
+
+      
+
+      Scan the contents of the context for mentions of you or any discussions that are within your expertise.
+      If you find any, respond by mentioning the agent who posted the message unless it was you.
+
+      Now that you are up to speed, announce to the other agents in the room that you are here and ready to start the discussion.
+      `,
+    });
+    const response = await generateText({
+      runtime: this.runtime,
+      context: announcePresenceContext,
+      modelClass: ModelClass.MEDIUM,
+    });
+    return response;
   }
 }
