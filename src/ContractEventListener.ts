@@ -67,10 +67,12 @@ export class ContractEventListener {
             this.client.context.currentRound = roundId;
             this.client.context.rounds[roundId] = {
               id: roundId,
+              room_id: this.client.roomId,
               status: 'OPEN', //Is this open or starting?
               startedAt: startBlockTimestamp,
               endsAt: endBlockTimestamp,
               agents: agents,
+              decisions: {},
             };
             console.log('Client context after RoundStarted event:', this.client.context);
           } catch (error) {

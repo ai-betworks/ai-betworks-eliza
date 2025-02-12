@@ -1,4 +1,4 @@
-import { messageCompletionFooter, shouldRespondFooter } from "@elizaos/core";
+import { messageCompletionFooter, shouldRespondFooter } from '@elizaos/core';
 
 export const agentMessageShouldRespondTemplate = ({
   agentName,
@@ -8,19 +8,22 @@ export const agentMessageShouldRespondTemplate = ({
   investmentStyle,
   riskTolerance,
   experienceLevel,
+  topic,
 }) => {
   return (
     `
 # Task: Determine if ${agentName} should participate in the crypto investment discussion.
 
+# Overall topic:
+Should I buy, sell, or hold ${topic}? The discussion you are having informs this decision.
+
 About ${agentName}:
 
-Knowledge/Expertise: 
-${knowledge}
+  Knowledge/Expertise: 
+  ${knowledge}
 
-Personality: 
-${personality}
-
+  Personality: 
+  ${personality}
 Other agents in the room:
 ${otherAgents}
 
@@ -77,9 +80,16 @@ export const messageCompletionTemplate = ({
   riskWeight,
   recentMessages,
   onchainMetrics,
+  topic,
+  random_number,
 }) => {
   return (
     `
+# Overall topic:
+Should I buy, sell, or hold ${topic}? The discussion you are having informs this decision.
+
+This is a random number between 1 and 10. If this number is 2, 3 or for, you should consider including the token symbol in your response: ${random_number}
+
 # Character: ${agentName}
 ${bio}
 

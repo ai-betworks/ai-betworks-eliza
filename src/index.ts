@@ -163,44 +163,7 @@ async function startAgent(
                 });
               }
             });
-            // Add message routes with schema validation
-            directClient.app.post("/forceRoundSync", async (req, res) => {
-              try {
-                const { roomId, roundId } = req.body;
-                console.log(
-                  "Syncing state with room",
-                  roomId,
-                  "round",
-                  roundId
-                );
-                const context = pvpvaiClient
-                  ?.getClient()
-                  ?.syncStateWithRound(roomId, roundId);
-                res.json(context);
-              } catch (error) {
-                res.status(500).json({
-                  error: "Failed to get context",
-                  details:
-                    error instanceof Error ? error.message : String(error),
-                });
-              }
-            });
-            // This will force the agent to download whatever the current round is from the database.
-            directClient.app.post("/reinit", async (req, res) => {
-              try {
-                const { roomId } = req.body;
-                const context = pvpvaiClient
-                  ?.getClient()
-                  ?.initializeRoomContext(roomId);
-                res.json(context);
-              } catch (error) {
-                res.status(500).json({
-                  error: "Failed to get context",
-                  details:
-                    error instanceof Error ? error.message : String(error),
-                });
-              }
-            });
+
             // Add message routes with schema validation
             directClient.app.post(
               "/messages/receiveAgentMessage",

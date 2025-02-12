@@ -67,8 +67,6 @@ export class PVPVAIIntegration {
     }
 
     this.client = new AgentClient(this.runtime, this.pvpvaiServerUrl, wallet, this.agentId);
-
-    // Connect to room - backend will handle round assignment
     await this.client.initializeRoomContext(this.roomId);
 
     // Initialize contract event listener
