@@ -6,6 +6,7 @@ import type { ExtendedAgentRuntime, Character as ExtendedCharacter } from '../ty
 import { AgentClient } from './AgentClient.ts';
 
 export const HARDCODED_ROOM_ID = 17;
+export const HARDCODED_GM_ID = 57;
 
 export interface ClientInitializationConfig {
   pvpvaiUrl: string;
@@ -53,18 +54,18 @@ export class PVPVAIIntegration {
     }
     const wallet = new ethers.Wallet(privateKey);
 
-    if (
-      agentConfig.eth_wallet_address.toLowerCase() !== wallet.address.toLowerCase() &&
-      agentConfig.room_agents.find(ra => ra.wallet_address.toLowerCase() === wallet.address.toLowerCase()) === undefined
-    ) {
-      throw new Error(
-        `Client side private key did not resolve to the same address as we have registered 
-        with the server for agent ${this.agentId} (also checked AGENT_${this.agentId}_PRIVATE_KEY). 
-        Expected ${agentConfig.eth_wallet_address} or ${agentConfig.room_agents.map(ra => ra.wallet_address)}, got ${
-          wallet.address
-        }`
-      );
-    }
+    // if (
+    //   agentConfig.eth_wallet_address.toLowerCase() !== wallet.address.toLowerCase() &&
+    //   agentConfig.room_agents.find(ra => ra.wallet_address.toLowerCase() === wallet.address.toLowerCase()) === undefined
+    // ) {
+    //   throw new Error(
+    //     `Client side private key did not resolve to the same address as we have registered
+    //     with the server for agent ${this.agentId} (also checked AGENT_${this.agentId}_PRIVATE_KEY).
+    //     Expected ${agentConfig.eth_wallet_address} or ${agentConfig.room_agents.map(ra => ra.wallet_address)}, got ${
+    //       wallet.address
+    //     }`
+    //   );
+    // }
 
     this.client = new AgentClient(this.runtime, this.pvpvaiServerUrl, wallet, this.agentId);
     await this.client.initializeRoomContext(this.roomId);

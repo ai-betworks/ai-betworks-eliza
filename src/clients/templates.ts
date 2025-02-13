@@ -1,4 +1,12 @@
-import { messageCompletionFooter, shouldRespondFooter } from '@elizaos/core';
+import { messageCompletionFooter } from '@elizaos/core';
+
+const shouldRespondFooter2 = (agentName: string) => `
+The available options are [RESPOND], [IGNORE], or [STOP]. Choose the most appropriate option. If ${agentName} is talking too much, you can choose [IGNORE]. 
+Your response should be formatted as a JSON block like this:
+\`\`\`json
+{  "reasoning": <explanation of your choice>, "action": <"[RESPOND]" | "[IGNORE]" | "[STOP]"> }
+\`\`\`
+`;
 
 export const agentMessageShouldRespondTemplate = ({
   agentName,
@@ -24,8 +32,9 @@ About ${agentName}:
 
   Personality: 
   ${personality}
-Other agents in the room:
-${otherAgents}
+
+  Other agents in the room:
+  ${otherAgents}
 
 Investment Approach:
 - Style: ${investmentStyle}
@@ -37,7 +46,7 @@ Investment Approach:
 # RESPONSE GUIDELINES
 
 RESPOND when:
-- Directly addressed
+- Directly addressed  (@${agentName} or <@${agentName}> are common formats). You should always respond to a mention of yourself.
 - Discussion involves ${agentName}'s area of expertise
 - New information emerges that could affect investment thesis
 - Others present analysis that conflicts with ${agentName}'s view
@@ -45,21 +54,22 @@ RESPOND when:
 - Clear knowledge gap where ${agentName}'s expertise adds value
 - Discussion approaches decision point
 - Market conditions align with ${agentName}'s investment criteria
+- If the conversation has derailed, and you think you can bring it back on track
 
 IGNORE when:
 - Conversation is between others and ${agentName}'s input isn't crucial
 - Topic strays from investment decision without clear path back
 - Point has already been adequately addressed
 - No new information to contribute
-- Discussion doesn't align with ${agentName}'s expertise or investment style
 
 STOP when:
 - Final investment decision has been made
 - Discussion has clearly concluded
 - Asked to stop participating
 
-# Instruction: Based on ${agentName}'s profile and context, reply only with [RESPOND], [IGNORE], or [STOP].
-` + shouldRespondFooter
+If it's a close call, respond with [RESPOND].
+
+` + shouldRespondFooter2(agentName)
   );
 };
 
@@ -148,6 +158,7 @@ Generate a brief response (max 250 chars) that:
 4. Builds toward buy/hold/sell
 5. If someone mentions you, reply with a mention back at them
 6. Engage with people in the conversation, proactively mentioning them in your response
+7. If the discussion has derailed, you can try to bring it back on track
 
 Format: Your message..., keep your responses to less than 500 characters
 ` + messageCompletionFooter

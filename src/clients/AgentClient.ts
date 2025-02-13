@@ -23,7 +23,7 @@ import {
   MessageTypes,
   observationMessageInputSchema,
 } from '../types/schemas.ts';
-import { HARDCODED_ROOM_ID } from './PVPVAIIntegration.ts';
+import { HARDCODED_GM_ID, HARDCODED_ROOM_ID } from './PVPVAIIntegration.ts';
 import { sortObjectKeys } from './sortObjectKeys.ts';
 import { agentMessageShouldRespondTemplate, messageCompletionTemplate } from './templates.ts';
 
@@ -331,13 +331,17 @@ export class AgentClient extends DirectClient {
       const { roundId: inputRoundId, agentId: inputAgentId, roomId: inputRoomId } = validatedMessage.content;
 
       // Check for duplicate message
-      if (await this.isDuplicateMessage(validatedMessage.signature)) {
-        console.log('Duplicate message detected, ignoring', validatedMessage.signature);
-        return { success: false, errorMessage: 'Duplicate message' };
-      }
+      // if (await this.isDuplicateMessage(validatedMessage.signature)) {
+      //   console.log('Duplicate message detected, ignoring', validatedMessage.signature);
+      //   return { success: false, errorMessage: 'Duplicate message' };
+      // }
 
       // Check response cooldown
-      if (this.isResponseCooldownActive()) {
+      // If message from GM, ignore cooldown, this is a hack to force the attack message to come through
+      if (validatedMessage.content.agentId === HARDCODED_GM_ID) {
+        console.log('Message sent from GM, bypassing cooldown');
+      }
+      if (this.isResponseCooldownActive() && validatedMessage.content.agentId !== HARDCODED_GM_ID) {
         console.log('Response cooldown active, ignoring message');
         return { success: false, errorMessage: 'Response cooldown active' };
       }
@@ -351,7 +355,10 @@ export class AgentClient extends DirectClient {
         return { success: false, errorMessage };
       }
 
-      if (!this.context.rounds[inputRoundId].agents[inputAgentId]) {
+      if (
+        !this.context.rounds[inputRoundId].agents[inputAgentId] &&
+        validatedMessage.content.agentId !== HARDCODED_GM_ID
+      ) {
         console.log(
           "received message from agent that doesn't exist in the round",
           inputAgentId,
@@ -867,8 +874,6 @@ export class AgentClient extends DirectClient {
       }),
     });
 
-    console.log('shouldRespondContext', shouldRespondContext);
-
     let retryDelay = 5000;
     while (true) {
       try {
@@ -879,6 +884,7 @@ export class AgentClient extends DirectClient {
           modelClass,
         });
 
+        console.log('shouldRespond response', response);
         elizaLogger.debug('Received response from generateText:', response);
         const parsedResponse = parseShouldRespondFromText(response.trim());
         if (parsedResponse) {
@@ -968,6 +974,7 @@ export class AgentClient extends DirectClient {
         speakingStyle: `• ${this.runtime.character.messageExamples
           .sort(() => 0.5 - Math.random())
           .slice(0, 3)
+          .map(example => example)
           .join('\n• ')}`,
         topic: this.context.topic,
         investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
@@ -1030,7 +1037,9 @@ export class AgentClient extends DirectClient {
 
       You are going to engage in a dicussion with the other agents to decide if you should buy, sell, or hold this token. ${
         this.context.topic
-      }. You should mention the name (${this.context.topic.name}) and symbol (${this.context.topic.symbol}) of the coin in this first message so the other agents know what you are talking about.
+      }. You should mention the name (${this.context.topic.name}) and symbol (${
+        this.context.topic.symbol
+      }) of the coin in this first message so the other agents know what you are talking about.
 
       Here is the most recent context we have in the discussion:
       ${JSON.stringify(this.context.rounds[activeRoundId])}
@@ -1039,7 +1048,10 @@ export class AgentClient extends DirectClient {
       TODO
 
       Your expertise:
-      ${this.runtime.character.knowledge}.
+      ${this.runtime.character.lore
+        ?.sort(() => Math.random() - 0.5)
+        .slice(0, 3)
+        .join('\n')}
 
       Your speaking style:
       ${this.runtime.character.messageExamples.map(example => `• ${example}`).join('\n• ')}
