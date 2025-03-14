@@ -186,7 +186,7 @@ async function startAgent(
                     });
                   } catch (error) {
                     // We are going to assume, unless the error is a validation error, that the message was processed successfully and something happened with the agent
-                    console.error("Error handling agent message:", error);
+                    console.error("Error handling agent message (index):", error);
                     res.json({
                       received: false,
                       success: false,

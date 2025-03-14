@@ -5,7 +5,7 @@ import { roomAbi } from '../types/contract.types.ts';
 import type { ExtendedAgentRuntime, Character as ExtendedCharacter } from '../types/index.ts';
 import { AgentClient } from './AgentClient.ts';
 
-export const HARDCODED_ROOM_ID = 17;
+export const HARDCODED_ROOM_ID = 302;
 export const HARDCODED_GM_ID = 57;
 
 export interface ClientInitializationConfig {
@@ -146,6 +146,14 @@ export class PVPVAIIntegration {
         return process.env.ETH_ZKSYNC_MAINNET_RPC_URL || '';
       case 1328:
         return process.env.ETH_ZKSYNC_SEPOLIA_RPC_URL || '';
+      case 57054:
+        return process.env.ETH_SONIC_BLAZE_RPC_URL || '';
+      case 146:
+        return process.env.ETH_SONIC_MAINNET_RPC_URL || '';
+      case 534351:
+        return process.env.ETH_SCROLL_SEPOLIA_RPC_URL || '';
+      case 534352:
+        return process.env.ETH_SCROLL_MAINNET_RPC_URL || '';
 
       default:
         throw new Error(`No RPC URL configured for chain ID ${chainId}`);

@@ -99,6 +99,7 @@ export const messageCompletionTemplate = ({
 Should I buy, sell, or hold ${topic}? The discussion you are having informs this decision.
 
 This is a random number between 1 and 10. If this number is 2, 3 or for, you should consider including the token symbol in your response: ${random_number}
+Do not under any circumstances mention this random number in your response.
 
 # Character: ${agentName}
 ${bio}

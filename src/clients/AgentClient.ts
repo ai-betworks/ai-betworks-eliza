@@ -64,7 +64,7 @@ export class AgentClient extends DirectClient {
 
   private readonly signatureCache: NodeCache;
   private lastResponseTime: number = 0;
-  private readonly RESPONSE_COOLDOWN_MS = 5000; // 3 second cooldown
+  private readonly RESPONSE_COOLDOWN_MS = 2000; // 1 second cooldown
   private readonly SIGNATURE_TTL = 300; // 5 minutes in seconds
 
   constructor(runtime: ExtendedAgentRuntime, pvpvaiUrl: string, wallet: Wallet, agentNumericId: number) {
@@ -133,12 +133,12 @@ export class AgentClient extends DirectClient {
         chainId: roomData.chain_id,
         rounds: {},
       };
-      if (activeRound) {
-        this.context.rounds[activeRound[0].id] = {
-          id: activeRound[0].id,
-          room_id: activeRound[0].room_id,
+      if (activeRound[0]) {
+        this.context.rounds[activeRound[0]?.id] = {
+          id: activeRound[0]?.id,
+          room_id: activeRound[0]?.room_id,
           endsAt: 999, //TODO Shouldn't be hardcoded, here temporarily until we refactor backend to use contracts as storage
-          agents: activeRound[0].round_agents.reduce((acc, roundAgent) => {
+          agents: activeRound[0]?.round_agents.reduce((acc, roundAgent) => {
             acc[roundAgent.agents.id] = roundAgent.agents;
             return acc;
           }, {} as Record<number, Partial<Tables<'agents'>>>),
@@ -150,12 +150,7 @@ export class AgentClient extends DirectClient {
 
       // Engage in the discussion immediately upon initialization if the active round is open
       console.log('activeRound', activeRound);
-      if (activeRound /*&& (activeRound[0].status === 'OPEN' || activeRound[0].status === 'STARTING')*/) {
-        const activeRoundId = activeRound[0].id;
-        // const response = await this.generateIntroMessage(activeRoundId);
-        // console.log('Announce presence response:', response);
-        // await this.sendAgentMessageToBackend({ text: response });
-      }
+
       // Listen to inserts
       supabase
         .channel('rounds')
@@ -364,7 +359,7 @@ export class AgentClient extends DirectClient {
           inputAgentId,
           'expected one of',
           Object.keys(this.context.rounds[inputRoundId].agents).map(
-            id => this.context.rounds[inputRoundId].agents[id].id
+            id => this.context.rounds[inputRoundId].agents[id]?.id
           )
         );
         return {
@@ -428,7 +423,10 @@ export class AgentClient extends DirectClient {
             chainId: this.context.chainId,
             currentRound: this.context.currentRound,
           },
-          senderAgent: this.context.rounds[inputRoundId].agents[inputAgentId],
+          senderAgent: {
+            id: this.context.rounds[inputRoundId].agents[inputAgentId]?.id,
+            name: this.context.rounds[inputRoundId].agents[inputAgentId]?.display_name,
+          },
           receiverAgent: {
             name: this.runtime.character.name,
             id: this.agentNumericId,
@@ -469,10 +467,13 @@ export class AgentClient extends DirectClient {
         const message = {
           content: sortObjectKeys(responseContent),
           messageType: MessageTypes.AGENT_MESSAGE,
-          signature: await this.generateSignature(responseContent),
+          // signature: await this.generateSignature(responseContent),
+          signature: Date.now().toString(),
           sender: this.wallet.address,
         } satisfies z.infer<typeof agentMessageAgentOutputSchema>;
         console.log('my response', responseText);
+
+        console.log('sending message to backend', message);
 
         // Don't wait or you'll deadlock because the GM will send you back a message right away.
         await axios.post(new URL('messages/agentMessage', this.pvpvaiUrl).toString(), message).catch(error => {
@@ -514,9 +515,9 @@ export class AgentClient extends DirectClient {
       }
     } catch (error) {
       if (error instanceof AxiosError) {
-        console.error('Error handling agent message:', error.response?.data);
+        console.error('Error handling agent message (AgentClient):', error.response?.data);
       } else {
-        console.error('Error handling agent message:', error);
+        console.error('Error handling agent message (AgentClient):', error);
       }
     }
   }
@@ -665,7 +666,8 @@ export class AgentClient extends DirectClient {
           roundId: this.context.currentRound,
         },
         messageType: MessageTypes.AGENT_DECISION,
-        signature: await this.generateSignature({ decision }),
+        // signature: await this.generateSignature({ decision }),
+        signature: Date.now().toString(),
         sender: this.wallet.address,
       };
 
@@ -723,11 +725,11 @@ export class AgentClient extends DirectClient {
       const sortedContent = sortObjectKeys(messageContent);
 
       // Generate signature from sorted content
-      const signature = await this.generateSignature(sortedContent);
+      // const signature = await this.generateSignature(sortedContent);
       const message = {
         content: sortedContent,
         messageType: MessageTypes.AGENT_MESSAGE,
-        signature,
+        signature: Date.now().toString(),
         sender: this.wallet.address,
       } satisfies z.infer<typeof agentMessageAgentOutputSchema>;
 
@@ -865,7 +867,7 @@ export class AgentClient extends DirectClient {
           .slice(0, 3)
           .join('\n• ')}`,
         otherAgents: `• ${Object.values(this.context.rounds[inputRoundId].agents)
-          .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary}`)
+          .map(agent => `${agent?.display_name} (${agent?.id}) - ${agent?.single_sentence_summary}`)
           .join('\n• ')}`,
         investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
         riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
@@ -987,7 +989,7 @@ export class AgentClient extends DirectClient {
         riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
         onchainMetrics: `• ${observations.map(o => o.content.text).join('\n• ')}`,
         otherAgents: `• ${Object.values(this.context.rounds[inputRoundId].agents)
-          .map(agent => `${agent.display_name} (${agent.id}) - ${agent.single_sentence_summary}`)
+          .map(agent => `${agent?.display_name} (${agent?.id}) - ${agent?.single_sentence_summary}`)
           .join('\n• ')}`,
         random_number: Math.floor(Math.random() * 10) + 1,
       }),
@@ -1058,7 +1060,7 @@ export class AgentClient extends DirectClient {
 
       The other agents in the room are the following, you should mention at least one of them ("<@Agent Name>" ) with an icebreaker question:
       ${Object.values(this.context.rounds[activeRoundId].agents)
-        .map(agent => `${agent.display_name} (${agent.id})`)
+        .map(agent => `${agent?.display_name} (${agent?.id})`)
         .join(', ')}
 
       

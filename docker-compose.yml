@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  fish-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm run start --characters="characters/literally-a-fish.json"
+    env_file: .env
+    ports:
+      - '3001:3001'
+    restart: unless-stopped
+
+  batman-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm run start --characters="characters/batman.json"
+    env_file: .env
+    ports:
+      - '3002:3002'
+    restart: unless-stopped
+
+  cuban-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm run start --characters="characters/mark-cuban.json"
+    env_file: .env
+    ports:
+      - '3003:3003'
+    restart: unless-stopped

@@ -2,7 +2,7 @@
   "name": "Literally a fish",
   "username": "Literally a fish",
   "clients": ["auto", "direct"],
-  "modelProvider": "anthropic",
+  "modelProvider": "google",
   "settings": {
     "model": "None",
     "pvpvai": {
