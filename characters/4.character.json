@@ -1,10 +1,10 @@
 {
   "name": "four",
   "username": "four",
-  "clients": ["auto", "direct"],
+  "clients": ["discord", "auto", "direct"],
   "modelProvider": "anthropic",
   "settings": {
-    "pvpvai": {
+    "aiBetworks": {
       "wsUrl": "ws://localhost:3334/ws",
       "roomId": 16,
       "roundId": 1,
@@ -15,7 +15,7 @@
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
       "creatorId": 1,
       "clientPort": 300,
-      "pvpvaiServerUrl": "http://localhost:3000",
+      "aiBetworksServerUrl": "http://localhost:3000",
       "investmentStyle": "contrarian",
       "riskTolerance": "high",
       "experienceLevel": "expert",

@@ -5,11 +5,11 @@ import { roomAbi } from '../types/contract.types.ts';
 import type { ExtendedAgentRuntime, Character as ExtendedCharacter } from '../types/index.ts';
 import { AgentClient } from './AgentClient.ts';
 
-export const HARDCODED_ROOM_ID = 302;
+export const HARDCODED_ROOM_ID = 303;
 export const HARDCODED_GM_ID = 57;
 
 export interface ClientInitializationConfig {
-  pvpvaiUrl: string;
+  aiBetworksUrl: string;
   walletAddress: string;
   creatorId: number;
   agentId: number;
@@ -17,11 +17,11 @@ export interface ClientInitializationConfig {
   roomId?: number;
 }
 
-export class PVPVAIIntegration {
+export class AiBetworksIntegration {
   private client: AgentClient;
   private runtime: ExtendedAgentRuntime;
   private agentId: number;
-  private pvpvaiServerUrl: string;
+  private aiBetworksServerUrl: string;
   private roomId: number = HARDCODED_ROOM_ID; //Temporarily hardcoded
   private eventListener: ContractEventListener | null = null;
 
@@ -29,18 +29,18 @@ export class PVPVAIIntegration {
     this.runtime = runtime;
     const char = runtime.character as unknown as ExtendedCharacter;
 
-    const walletAddress = char.settings?.pvpvai?.ethWalletAddress || config.walletAddress;
+    const walletAddress = char.settings?.aiBetworks?.ethWalletAddress || config.walletAddress;
     if (!walletAddress) {
       throw new Error('No ethWalletAddress found in character settings or config');
     }
 
-    const agentId = char.settings?.pvpvai?.agentId || config.agentId;
+    const agentId = char.settings?.aiBetworks?.agentId || config.agentId;
     if (!agentId) {
       throw new Error('No agentId found in character settings or config');
     }
     this.agentId = agentId;
 
-    this.pvpvaiServerUrl = char.settings?.pvpvai?.pvpvaiServerUrl || config.pvpvaiUrl;
+    this.aiBetworksServerUrl = char.settings?.aiBetworks?.aiBetworksServerUrl || config.aiBetworksUrl;
   }
 
   public async initialize(): Promise<void> {
@@ -67,7 +67,7 @@ export class PVPVAIIntegration {
     //   );
     // }
 
-    this.client = new AgentClient(this.runtime, this.pvpvaiServerUrl, wallet, this.agentId);
+    this.client = new AgentClient(this.runtime, this.aiBetworksServerUrl, wallet, this.agentId);
     await this.client.initializeRoomContext(this.roomId);
 
     // Initialize contract event listener
@@ -161,10 +161,10 @@ export class PVPVAIIntegration {
   }
 }
 
-// Factory function to create PVPVAIIntegration
-export const createPVPVAIClient = (
+// Factory function to create AiBetworksClient
+export const createAiBetworksClient = (
   runtime: ExtendedAgentRuntime,
   config: ClientInitializationConfig
-): PVPVAIIntegration => {
-  return new PVPVAIIntegration(runtime, config);
+): AiBetworksIntegration => {
+  return new AiBetworksIntegration(runtime, config);
 };

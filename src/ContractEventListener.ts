@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { AgentClient } from './clients/AgentClient';
 import { Database, Tables } from './types/database.types';
 
-export const supabase = createClient<Database>(process.env.PVPVAI_SUPABASE_URL!, process.env.PVPVAI_SUPABASE_ANON_KEY!);
+export const supabase = createClient<Database>(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);
 
 export class ContractEventListener {
   private provider: ethers.Provider;

@@ -44,7 +44,7 @@ runtime = {
   agentId: UUID,            // Runtime ID (UUID)
   character: {
     settings: {
-      pvpvai: {
+      aiBetworks: {
         roomId: number,     // Database numeric ID
         roundId: number,    // Database numeric ID
         agentId: number,    // Database numeric ID

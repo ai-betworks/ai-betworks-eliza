@@ -1,65 +1,44 @@
-import { DirectClient as BaseDirectClient } from "@elizaos/client-direct";
-import { AgentRuntime, elizaLogger, stringToUuid } from "@elizaos/core";
-import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
-import { createNodePlugin } from "@elizaos/plugin-node";
-import { solanaPlugin } from "@elizaos/plugin-solana";
-import { createClient } from "@supabase/supabase-js";
-import express from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { z } from "zod";
-import { initializeDbCache } from "./cache/index.ts";
-import { character } from "./character.ts";
-import { createPVPVAIClient } from "./clients/PVPVAIIntegration.ts";
-import {
-  getTokenForProvider,
-  loadCharacters,
-  parseArguments,
-} from "./config/index.ts";
-import { initializeDatabase } from "./database/index.ts";
-import { Database } from "./types/database.types.ts";
-import type {
-  Character,
-  ExtendedAgentRuntime,
-  Character as ExtendedCharacter,
-} from "./types/index.ts";
+import { DirectClient as BaseDirectClient } from '@elizaos/client-direct';
+import { AgentRuntime, elizaLogger, stringToUuid } from '@elizaos/core';
+import { bootstrapPlugin } from '@elizaos/plugin-bootstrap';
+import { createNodePlugin } from '@elizaos/plugin-node';
+import { solanaPlugin } from '@elizaos/plugin-solana';
+import { createClient } from '@supabase/supabase-js';
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { z } from 'zod';
+import { initializeDbCache } from './cache/index.ts';
+import { character } from './character.ts';
+import { createAiBetworksClient } from './clients/AiBetworksIntegration.ts';
+import { getTokenForProvider, loadCharacters, parseArguments } from './config/index.ts';
+import { initializeDatabase } from './database/index.ts';
+import { Database } from './types/database.types.ts';
+import type { Character, ExtendedAgentRuntime, Character as ExtendedCharacter } from './types/index.ts';
 import {
   agentMessageInputSchema,
   gmInstructDecisionInputSchema,
   observationMessageInputSchema,
-} from "./types/schemas.ts";
+} from './types/schemas.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 //TODO Move variables into ExtendedCharacter config later
-export const supabase = createClient<Database>(
-  process.env.PVPVAI_SUPABASE_URL!,
-  process.env.PVPVAI_SUPABASE_ANON_KEY!
-);
+export const supabase = createClient<Database>(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);
 
 export const wait = (minTime: number = 1000, maxTime: number = 3000) => {
-  const waitTime =
-    Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime;
-  return new Promise((resolve) => setTimeout(resolve, waitTime));
+  const waitTime = Math.floor(Math.random() * (maxTime - minTime + 1)) + minTime;
+  return new Promise(resolve => setTimeout(resolve, waitTime));
 };
 
 let nodePlugin: any | undefined;
 
-export function createAgent(
-  character: Character,
-  db: any,
-  cache: any,
-  token: string
-): ExtendedAgentRuntime {
+export function createAgent(character: Character, db: any, cache: any, token: string): ExtendedAgentRuntime {
   const extendedChar = character as unknown as ExtendedCharacter;
 
-  elizaLogger.success(
-    elizaLogger.successesTitle,
-    "Creating runtime for character",
-    extendedChar.name
-  );
+  elizaLogger.success(elizaLogger.successesTitle, 'Creating runtime for character', extendedChar.name);
 
   nodePlugin ??= createNodePlugin();
 
@@ -86,17 +65,14 @@ export function createAgent(
   return runtime;
 }
 
-async function startAgent(
-  character: Character,
-  directClient: BaseDirectClient
-) {
+async function startAgent(character: Character, directClient: BaseDirectClient) {
   try {
     const extendedChar = character as unknown as ExtendedCharacter;
     extendedChar.id ??= stringToUuid(extendedChar.name);
     extendedChar.username ??= extendedChar.name;
 
     const token = getTokenForProvider(extendedChar.modelProvider, extendedChar);
-    const dataDir = path.join(__dirname, "../data");
+    const dataDir = path.join(__dirname, '../data');
 
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
@@ -111,39 +87,32 @@ async function startAgent(
     await runtime.initialize();
     runtime.clients = {};
 
-    if (extendedChar.settings?.pvpvai) {
+    if (extendedChar.settings?.aiBetworks) {
       try {
-        const {
-          pvpvaiServerUrl,
-          ethWalletAddress,
-          creatorId,
-          agentId,
-          clientPort,
-        } = extendedChar.settings.pvpvai;
+        const { aiBetworksServerUrl, ethWalletAddress, creatorId, agentId, clientPort } =
+          extendedChar.settings.aiBetworks;
         const config = {
-          pvpvaiUrl: pvpvaiServerUrl,
+          aiBetworksUrl: aiBetworksServerUrl,
           walletAddress: ethWalletAddress,
           creatorId: Number(creatorId),
           agentId: Number(agentId),
-          privateKey:
-            process.env[`AGENT_${agentId}_PRIVATE_KEY`] ||
-            extendedChar.settings.secrets?.PVPVAI_PRIVATE_KEY,
+          privateKey: process.env[`AGENT_${agentId}_PRIVATE_KEY`],
         };
 
         // Create and initialize client
-        const pvpvaiClient = await createPVPVAIClient(runtime, config);
-        if (pvpvaiClient) {
-          await pvpvaiClient.initialize();
-          runtime.clients["pvpvai"] = pvpvaiClient;
+        const aiBetworksClient = await createAiBetworksClient(runtime, config);
+        if (aiBetworksClient) {
+          await aiBetworksClient.initialize();
+          runtime.clients['aiBetworks'] = aiBetworksClient;
         }
 
         // Start listening on the appropriate port
         await new Promise<void>((resolve, reject) => {
           try {
             // Add routes before starting the server
-            directClient.app.get("/health", (req, res) => {
+            directClient.app.get('/health', (req, res) => {
               res.json({
-                status: "ok",
+                status: 'ok',
                 agentId,
               });
             });
@@ -151,105 +120,82 @@ async function startAgent(
             // Add context route
 
             // Add message routes with schema validation
-            directClient.app.get("/agentContext", async (req, res) => {
+            directClient.app.get('/agentContext', async (req, res) => {
               try {
-                const context = pvpvaiClient?.getClient()?.getContext();
+                const context = aiBetworksClient?.getClient()?.getContext();
                 res.json(context);
               } catch (error) {
                 res.status(500).json({
-                  error: "Failed to get context",
-                  details:
-                    error instanceof Error ? error.message : String(error),
+                  error: 'Failed to get context',
+                  details: error instanceof Error ? error.message : String(error),
                 });
               }
             });
 
             // Add message routes with schema validation
-            directClient.app.post(
-              "/messages/receiveAgentMessage",
-              express.json(),
-              async (req, res) => {
+            directClient.app.post('/messages/receiveAgentMessage', express.json(), async (req, res) => {
+              try {
+                const validatedMessage = agentMessageInputSchema.parse(req.body);
+                // Handle the validated message
                 try {
-                  const validatedMessage = agentMessageInputSchema.parse(
-                    req.body
-                  );
-                  // Handle the validated message
-                  try {
-                    const result = await pvpvaiClient
-                      ?.getClient()
-                      ?.handleAgentMessage?.(validatedMessage);
+                  const result = await aiBetworksClient?.getClient()?.handleAgentMessage?.(validatedMessage);
 
-                    res.json({
-                      received: true,
-                      message: validatedMessage,
-                      ...result,
-                    });
-                  } catch (error) {
-                    // We are going to assume, unless the error is a validation error, that the message was processed successfully and something happened with the agent
-                    console.error("Error handling agent message (index):", error);
-                    res.json({
-                      received: false,
-                      success: false,
-                      errorMessage: "Error processing message",
-                      details:
-                        error instanceof Error ? error.message : String(error),
-                    });
-                  }
+                  res.json({
+                    received: true,
+                    message: validatedMessage,
+                    ...result,
+                  });
                 } catch (error) {
-                  // Only validation errors return 400
-                  res.status(400).json({
-                    error: "Invalid message format",
-                    details: error,
+                  // We are going to assume, unless the error is a validation error, that the message was processed successfully and something happened with the agent
+                  console.error('Error handling agent message (index):', error);
+                  res.json({
+                    received: false,
+                    success: false,
+                    errorMessage: 'Error processing message',
+                    details: error instanceof Error ? error.message : String(error),
                   });
                 }
+              } catch (error) {
+                // Only validation errors return 400
+                res.status(400).json({
+                  error: 'Invalid message format',
+                  details: error,
+                });
               }
-            );
+            });
 
-            directClient.app.post(
-              "/messages/receiveObservation",
-              express.json(),
-              async (req, res) => {
+            directClient.app.post('/messages/receiveObservation', express.json(), async (req, res) => {
+              try {
+                const validatedMessage = observationMessageInputSchema.parse(req.body);
+
                 try {
-                  const validatedMessage = observationMessageInputSchema.parse(
-                    req.body
-                  );
+                  const result = await aiBetworksClient?.getClient()?.handleReceiveObservation?.(validatedMessage);
 
-                  try {
-                    const result = await pvpvaiClient
-                      ?.getClient()
-                      ?.handleReceiveObservation?.(validatedMessage);
-
-                    res.json({
-                      received: true,
-                      message: validatedMessage,
-                      ...result,
-                    });
-                  } catch (error) {
-                    console.error("Error handling observation:", error);
-                    res.json({
-                      received: false,
-                      success: false,
-                      errorMessage: "Error processing observation",
-                      details:
-                        error instanceof Error ? error.message : String(error),
-                    });
-                  }
+                  res.json({
+                    received: true,
+                    message: validatedMessage,
+                    ...result,
+                  });
                 } catch (error) {
-                  // Only validation errors return 400
-                  res.status(400).json({
-                    error: "Invalid message format",
-                    details: error,
+                  console.error('Error handling observation:', error);
+                  res.json({
+                    received: false,
+                    success: false,
+                    errorMessage: 'Error processing observation',
+                    details: error instanceof Error ? error.message : String(error),
                   });
                 }
+              } catch (error) {
+                // Only validation errors return 400
+                res.status(400).json({
+                  error: 'Invalid message format',
+                  details: error,
+                });
               }
-            );
+            });
 
             directClient.app.listen(clientPort || 3001, () => {
-              console.log(
-                `${extendedChar.name} (#${agentId}) listening on port ${
-                  clientPort || 3001
-                }`
-              );
+              console.log(`${extendedChar.name} (#${agentId}) listening on port ${clientPort || 3001}`);
 
               resolve();
             });
@@ -258,55 +204,40 @@ async function startAgent(
           }
 
           // Decision endpoint
-          directClient.app.post(
-            "/messages/gmInstructDecision",
-            express.json(),
-            async (req, res) => {
-              try {
-                const validatedMessage = gmInstructDecisionInputSchema.parse(
-                  req.body
-                );
-                console.log("gmInstructDecision", validatedMessage);
-                const result = await pvpvaiClient
-                  ?.getClient()
-                  ?.handleDecisionRequest(
-                    validatedMessage.content.roomId,
-                    validatedMessage.content.roundId
-                  );
-                res.json({
-                  success: true,
-                  result,
-                });
-              } catch (error) {
-                // If it's a validation error, return 400
-                if (error instanceof z.ZodError) {
-                  res.status(400).json({
-                    success: false,
-                    error: "Invalid message format",
-                    details: error.errors,
-                  });
-                  return;
-                }
-                // For other errors, return 500
-                res.status(500).json({
+          directClient.app.post('/messages/gmInstructDecision', express.json(), async (req, res) => {
+            try {
+              const validatedMessage = gmInstructDecisionInputSchema.parse(req.body);
+              console.log('gmInstructDecision', validatedMessage);
+              const result = await aiBetworksClient
+                ?.getClient()
+                ?.handleDecisionRequest(validatedMessage.content.roomId, validatedMessage.content.roundId);
+              res.json({
+                success: true,
+                result,
+              });
+            } catch (error) {
+              // If it's a validation error, return 400
+              if (error instanceof z.ZodError) {
+                res.status(400).json({
                   success: false,
-                  error: "Error processing decision",
-                  details:
-                    error instanceof Error ? error.message : String(error),
+                  error: 'Invalid message format',
+                  details: error.errors,
                 });
+                return;
               }
+              // For other errors, return 500
+              res.status(500).json({
+                success: false,
+                error: 'Error processing decision',
+                details: error instanceof Error ? error.message : String(error),
+              });
             }
-          );
+          });
         });
 
-        console.log(
-          `Successfully initialized PvPvAI client for ${extendedChar.name}`
-        );
+        console.log(`Successfully initialized AI Betworks client for ${extendedChar.name}`);
       } catch (error) {
-        console.error(
-          `Failed to initialize PvPvAI client for ${extendedChar.name}:`,
-          error
-        );
+        console.error(`Failed to initialize AI Betworks client for ${extendedChar.name}:`, error);
         throw error; // Re-throw to handle failure
       }
     }
@@ -316,12 +247,7 @@ async function startAgent(
 
     return runtime;
   } catch (error) {
-    elizaLogger.error(
-      `Error starting agent for character ${
-        (character as unknown as ExtendedCharacter).name
-      }:`,
-      error
-    );
+    elizaLogger.error(`Error starting agent for character ${(character as unknown as ExtendedCharacter).name}:`, error);
     console.error(error);
     throw error;
   }
@@ -345,9 +271,7 @@ const startAgents = async () => {
     for (const char of characters) {
       const extendedChar = char as unknown as ExtendedCharacter;
       if (!extendedChar.agentRole) {
-        throw new Error(
-          `Character ${extendedChar.name} missing required agentRole configuration`
-        );
+        throw new Error(`Character ${extendedChar.name} missing required agentRole configuration`);
       }
 
       const extendedCharacter: Character = {
@@ -359,13 +283,13 @@ const startAgents = async () => {
       const runtime = await startAgent(extendedCharacter, directClient);
       runtimes.push(runtime);
 
-      console.log("Started agent:", {
+      console.log('Started agent:', {
         name: runtime.character.name,
         type: runtime.character.agentRole?.type,
         id: runtime.agentId,
-        roomId: runtime.clients["pvpvai"]?.getClient()?.getRoomId(),
-        port: runtime.clients["pvpvai"]?.getClient()?.getPort(),
-        context: runtime.clients["pvpvai"]?.getClient()?.getContext(),
+        roomId: runtime.clients['aiBetworks']?.getClient()?.getRoomId(),
+        port: runtime.clients['aiBetworks']?.getClient()?.getPort(),
+        context: runtime.clients['aiBetworks']?.getClient()?.getContext(),
       });
     }
 
@@ -397,12 +321,12 @@ const startAgents = async () => {
     //   });
     // }
   } catch (error) {
-    elizaLogger.error("Error starting agents:", error);
+    elizaLogger.error('Error starting agents:', error);
     process.exit(1);
   }
 };
 
-startAgents().catch((error) => {
-  elizaLogger.error("Unhandled error in startAgents:", error);
+startAgents().catch(error => {
+  elizaLogger.error('Unhandled error in startAgents:', error);
   process.exit(1);
 });

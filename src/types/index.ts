@@ -1,31 +1,27 @@
-import {
-  AgentRuntime as BaseAgentRuntime,
-  Character as BaseCharacter,
-  UUID,
-} from "@elizaos/core";
-import { PVPVAIIntegration } from "../clients/PVPVAIIntegration.ts";
+import { AgentRuntime as BaseAgentRuntime, Character as BaseCharacter, UUID } from '@elizaos/core';
+import { AiBetworksIntegration } from '../clients/AiBetworksIntegration.ts';
 
 // Define our additional types
 export interface AgentRole {
-  type: "GM" | "AGENT";
+  type: 'GM' | 'AGENT';
   name: string;
   description: string;
   chain_family?: string;
   chain_id?: number;
 }
 
-export type PVPVAISettings = {
-  pvpvaiServerUrl: string;
-  type: "GM" | "AGENT";
+export type AiBetworksSettings = {
+  aiBetworksServerUrl: string;
+  type: 'GM' | 'AGENT';
   agentId: number;
   ethWalletAddress?: string; // === eth_wallet_address
   solanaWalletAddress?: string; // solana_wallet_address
   creatorId: number; // Changed from string to number to match DB schema
   clientHost?: string; //Default is 0.0.0.0
   clientPort?: number; //Default is 3001
-  investmentStyle: "value" | "momentum" | "contrarian" | string;
-  riskTolerance: "low" | "moderate" | "high";
-  experienceLevel: "beginner" | "intermediate" | "expert";
+  investmentStyle: 'value' | 'momentum' | 'contrarian' | string;
+  riskTolerance: 'low' | 'moderate' | 'high';
+  experienceLevel: 'beginner' | 'intermediate' | 'expert';
   technicalWeight: number;
   fundamentalWeight: number;
   sentimentWeight: number;
@@ -45,7 +41,7 @@ export interface ExtendedCharacterProps {
   roomId?: number;
   creatorId?: string;
   settings?: {
-    pvpvai?: PVPVAISettings;
+    aiBetworks?: AiBetworksSettings;
     model?: string;
     secrets?: Record<string, string>;
   };
@@ -58,7 +54,7 @@ export type Character = BaseCharacter & ExtendedCharacterProps;
 
 // Replace class with type alias to avoid conflicts with private members
 export type ExtendedAgentRuntime = BaseAgentRuntime & {
-  pvpvaiClient?: PVPVAIIntegration;
+  aiBetworksClient?: AiBetworksIntegration;
   clients: Record<string, any>;
   character: Character;
   roomId?: number;

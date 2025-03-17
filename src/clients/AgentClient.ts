@@ -23,7 +23,7 @@ import {
   MessageTypes,
   observationMessageInputSchema,
 } from '../types/schemas.ts';
-import { HARDCODED_GM_ID, HARDCODED_ROOM_ID } from './PVPVAIIntegration.ts';
+import { HARDCODED_GM_ID, HARDCODED_ROOM_ID } from './AiBetworksIntegration.ts';
 import { sortObjectKeys } from './sortObjectKeys.ts';
 import { agentMessageShouldRespondTemplate, messageCompletionTemplate } from './templates.ts';
 
@@ -56,7 +56,7 @@ type RoomChatContext = {
 export class AgentClient extends DirectClient {
   public readonly wallet: Wallet;
   public readonly agentNumericId: number;
-  public readonly pvpvaiUrl: string;
+  public readonly aiBetworksUrl: string;
   public roomId: number = HARDCODED_ROOM_ID;
   public context: RoomChatContext;
   public runtime: ExtendedAgentRuntime;
@@ -67,9 +67,9 @@ export class AgentClient extends DirectClient {
   private readonly RESPONSE_COOLDOWN_MS = 2000; // 1 second cooldown
   private readonly SIGNATURE_TTL = 300; // 5 minutes in seconds
 
-  constructor(runtime: ExtendedAgentRuntime, pvpvaiUrl: string, wallet: Wallet, agentNumericId: number) {
+  constructor(runtime: ExtendedAgentRuntime, aiBetworksUrl: string, wallet: Wallet, agentNumericId: number) {
     super();
-    this.pvpvaiUrl = pvpvaiUrl;
+    this.aiBetworksUrl = aiBetworksUrl;
     this.wallet = wallet;
     this.agentNumericId = agentNumericId;
     this.runtime = runtime;
@@ -378,7 +378,7 @@ export class AgentClient extends DirectClient {
       const messageMemory: Memory = {
         userId: stringToUuid(inputAgentId.toString()), // ID of the agent who sent the message
         agentId: this.runtime.agentId, // ID of the current agent receiving the message
-        roomId: stringToUuid(`PVPVAI-ROOM-${inputRoomId}`),
+        roomId: stringToUuid(`AI-BETWORKS-ROOM-${inputRoomId}`),
         content: {
           text: validatedMessage.content.text,
           metadata: {
@@ -403,10 +403,10 @@ export class AgentClient extends DirectClient {
         {
           userId: stringToUuid(this.agentNumericId.toString()),
           agentId: stringToUuid(this.agentNumericId.toString()),
-          roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+          roomId: stringToUuid('AI-BETWORKS-ROOM-' + this.roomId),
           content: {
             text: validatedMessage.content.text,
-            source: 'PVPVAI',
+            source: 'AI-BETWORKS',
           },
         },
         {
@@ -476,7 +476,7 @@ export class AgentClient extends DirectClient {
         console.log('sending message to backend', message);
 
         // Don't wait or you'll deadlock because the GM will send you back a message right away.
-        await axios.post(new URL('messages/agentMessage', this.pvpvaiUrl).toString(), message).catch(error => {
+        await axios.post(new URL('messages/agentMessage', this.aiBetworksUrl).toString(), message).catch(error => {
           console.error('Error sending agent message to backend:', error);
         });
 
@@ -484,7 +484,7 @@ export class AgentClient extends DirectClient {
         const messageMemory: Memory = {
           userId: stringToUuid(inputAgentId.toString()), // ID of the agent who sent the message
           agentId: this.runtime.agentId, // ID of the current agent receiving the message
-          roomId: stringToUuid(`PVPVAI-ROOM-${inputRoomId}`),
+          roomId: stringToUuid(`AI-BETWORKS-ROOM-${inputRoomId}`),
           content: {
             text: validatedMessage.content.text,
             metadata: {
@@ -548,7 +548,7 @@ export class AgentClient extends DirectClient {
       const observationMemory: Memory = {
         userId: this.runtime.agentId,
         agentId: this.runtime.agentId,
-        roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+        roomId: stringToUuid('AI-BETWORKS-ROOM-' + this.roomId),
         content: {
           text: JSON.stringify(validatedMessage.content.data),
           metadata: {
@@ -590,10 +590,10 @@ export class AgentClient extends DirectClient {
         {
           userId: stringToUuid(this.agentNumericId.toString()),
           agentId: stringToUuid(this.agentNumericId.toString()),
-          roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+          roomId: stringToUuid('AI-BETWORKS-ROOM-' + this.roomId),
           content: {
             text: '',
-            source: 'PVPVAI',
+            source: 'AI-BETWORKS',
           },
         },
         {
@@ -672,7 +672,7 @@ export class AgentClient extends DirectClient {
       };
 
       await axios
-        .post(`${this.pvpvaiUrl}/messages/decision`, message, {
+        .post(`${this.aiBetworksUrl}/messages/decision`, message, {
           headers: {
             'Content-Type': 'application/json',
           },
@@ -705,7 +705,7 @@ export class AgentClient extends DirectClient {
 
   // Called when the agent decides to respond to a message or when the GM asks the agent to send a message if this agent has gone silent.
   // The decision to respond and the response is made is formed the processMessage function. This function is just for sending the message
-  // It takes text, wraps it in a message, signs it, and sends it to the Pvpvai backend
+  // It takes text, wraps it in a message, signs it, and sends it to the AI Betworks backend
   public async sendAgentMessageToBackend(content: { text: string }): Promise<void> {
     if (!this.roomId || !this.context.currentRound) {
       throw new Error('Agent not initialized with room and round IDs');
@@ -736,7 +736,7 @@ export class AgentClient extends DirectClient {
       console.log('Sending message to backend', message);
       // Send message
       await axios
-        .post(`${this.pvpvaiUrl}/messages/agentMessage`, message, {
+        .post(`${this.aiBetworksUrl}/messages/agentMessage`, message, {
           headers: {
             'Content-Type': 'application/json',
           },
@@ -764,7 +764,7 @@ export class AgentClient extends DirectClient {
     try {
       // Use a simple text query instead of embedding search
       const observations = await this.runtime.messageManager.getMemories({
-        roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+        roomId: stringToUuid('AI-BETWORKS-ROOM-' + this.roomId),
         count: 100, // Get more initially to filter
       });
 
@@ -806,7 +806,7 @@ export class AgentClient extends DirectClient {
     try {
       // Use a simple text query instead of embedding search
       const messages = await this.runtime.messageManager.getMemories({
-        roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+        roomId: stringToUuid('AI-BETWORKS-ROOM-' + this.roomId),
         count: 100, // Get more initially to filter
       });
 
@@ -869,9 +869,9 @@ export class AgentClient extends DirectClient {
         otherAgents: `• ${Object.values(this.context.rounds[inputRoundId].agents)
           .map(agent => `${agent?.display_name} (${agent?.id}) - ${agent?.single_sentence_summary}`)
           .join('\n• ')}`,
-        investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
-        riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
-        experienceLevel: this.runtime.character.settings.pvpvai.experienceLevel || 'intermediate',
+        investmentStyle: this.runtime.character.settings.aiBetworks.investmentStyle,
+        riskTolerance: this.runtime.character.settings.aiBetworks.riskTolerance || 'moderate',
+        experienceLevel: this.runtime.character.settings.aiBetworks.experienceLevel || 'intermediate',
         topic: this.context.topic,
       }),
     });
@@ -920,7 +920,7 @@ export class AgentClient extends DirectClient {
   }
 
   public getPort(): number | undefined {
-    return this.runtime.clients['pvpvai']?.port;
+    return this.runtime.clients['aiBetworks']?.port;
   }
 
   public override stop(): void {
@@ -979,14 +979,14 @@ export class AgentClient extends DirectClient {
           .map(example => example)
           .join('\n• ')}`,
         topic: this.context.topic,
-        investmentStyle: this.runtime.character.settings.pvpvai.investmentStyle,
-        riskTolerance: this.runtime.character.settings.pvpvai.riskTolerance || 'moderate',
-        experienceLevel: this.runtime.character.settings.pvpvai.experienceLevel || 'intermediate',
+        investmentStyle: this.runtime.character.settings.aiBetworks.investmentStyle,
+        riskTolerance: this.runtime.character.settings.aiBetworks.riskTolerance || 'moderate',
+        experienceLevel: this.runtime.character.settings.aiBetworks.experienceLevel || 'intermediate',
         recentMessages: `• ${messageHistory.map(m => m.content.text).join('\n• ')}`,
-        technicalWeight: this.runtime.character.settings.pvpvai.technicalWeight || 0.25,
-        fundamentalWeight: this.runtime.character.settings.pvpvai.fundamentalWeight || 0.15,
-        sentimentWeight: this.runtime.character.settings.pvpvai.sentimentWeight || 0.4,
-        riskWeight: this.runtime.character.settings.pvpvai.riskWeight || 0.2,
+        technicalWeight: this.runtime.character.settings.aiBetworks.technicalWeight || 0.25,
+        fundamentalWeight: this.runtime.character.settings.aiBetworks.fundamentalWeight || 0.15,
+        sentimentWeight: this.runtime.character.settings.aiBetworks.sentimentWeight || 0.4,
+        riskWeight: this.runtime.character.settings.aiBetworks.riskWeight || 0.2,
         onchainMetrics: `• ${observations.map(o => o.content.text).join('\n• ')}`,
         otherAgents: `• ${Object.values(this.context.rounds[inputRoundId].agents)
           .map(agent => `${agent?.display_name} (${agent?.id}) - ${agent?.single_sentence_summary}`)
@@ -1013,10 +1013,10 @@ export class AgentClient extends DirectClient {
       {
         userId: stringToUuid(this.agentNumericId.toString()),
         agentId: stringToUuid(this.agentNumericId.toString()),
-        roomId: stringToUuid('PVPVAI-ROOM-' + this.roomId),
+        roomId: stringToUuid('AI-BETWORKS-ROOM-' + this.roomId),
         content: {
           text: JSON.stringify(this.context.topic),
-          source: 'PVPVAI',
+          source: 'AI-BETWORKS',
         },
       },
       {

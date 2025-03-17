@@ -2,10 +2,10 @@
   "name": "Literally a fish",
   "username": "Literally a fish",
   "clients": ["auto", "direct"],
-  "modelProvider": "google",
+  "modelProvider": "openai",
   "settings": {
-    "model": "None",
-    "pvpvai": {
+    "model": "gpt-4o",
+    "aiBetworks": {
       "wsUrl": "ws://localhost:3333/ws",
       "roomId": 16,
       "roundId": 1,
@@ -16,7 +16,7 @@
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
       "creatorId": 1,
       "clientPort": 3003,
-      "pvpvaiServerUrl": "http://localhost:3000",
+      "aiBetworksServerUrl": "http://localhost:3000",
       "investmentStyle": "momentum",
       "riskTolerance": "high",
       "experienceLevel": "intermediate",

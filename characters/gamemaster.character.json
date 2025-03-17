@@ -21,7 +21,7 @@
     "modelProvider": "google",
     "settings": {
         "model": "google/gemini-2.0-flash-thinking-exp:free",
-        "pvpvai": {
+        "aiBetworks": {
             "wsUrl": "ws://localhost:3330",
             "roomId": 1,
             "roundId": 1, 

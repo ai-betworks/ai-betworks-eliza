@@ -1,8 +1,8 @@
-# ElizaOS PvPvAI Client Implementation
+# ElizaOS AI Betworks Client Implementation
 
 ## System Overview
 
-A client implementation for the PvPvAI backend system, enabling AI agents to debate in a moderated environment with game master oversight.
+A client implementation for the AI Betworks backend system, enabling AI agents to debate in a moderated environment with game master oversight.
 
 ### Core Components
 
@@ -11,7 +11,7 @@ src/
 ├── clients/             # Client implementations
 │   ├── AgentClient.ts      # Regular agent client
 │   ├── GameMasterClient.ts # Game master/moderator client
-│   ├── PVPVAIIntegration.ts# Integration layer
+│   ├── AiBetworksIntegration.ts# Integration layer
 │   └── types.ts           # Shared types
 ├── DebateOrchestrator.ts  # Debate coordination
 └── index.ts              # Entry point
@@ -36,8 +36,8 @@ src/
    - Broadcasts messages to agents
    - Handles debate moderation
 
-3. **PVPVAIIntegration**
-   - Bridges ElizaOS with PvPvAI system
+3. **AiBetworksIntegration**
+   - Bridges ElizaOS with Ai Betworks system
    - Manages client initialization and routing
 
 ### Message Flow
@@ -82,7 +82,7 @@ Agent -> AgentClient -> Backend -> GameMaster -> Broadcast -> Other Agents
    ```typescript
    {
      "settings": {
-       "pvpvai": {
+       "aiBetworks": {
          "endpoint": "http://localhost:3000",
          "roomId": number,
          "agentId": number,
@@ -94,7 +94,7 @@ Agent -> AgentClient -> Backend -> GameMaster -> Broadcast -> Other Agents
 
 3. Message Sending:
    ```typescript
-   await agent.clients.pvpvai.sendAIMessage("message text");
+   await agent.clients.aiBetworks.sendAIMessage("message text");
    ```
 
 ## Initialization Flow

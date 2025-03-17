@@ -93,8 +93,8 @@ export async function initializeClients(character: Character, runtime: IAgentRun
 export { ContractEventListener } from '../ContractEventListener.ts';
 export { AgentClient } from './AgentClient.ts';
 export {
-  createPVPVAIClient,
-  PVPVAIIntegration,
+  AiBetworksIntegration,
+  createAiBetworksClient,
   type ClientInitializationConfig as Config,
-} from './PVPVAIIntegration.ts';
+} from './AiBetworksIntegration.ts';
 // export { SharedWebSocket, type WebSocketConfig } from "./shared-websocket.ts";

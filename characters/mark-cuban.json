@@ -1,24 +1,10 @@
 {
   "name": "Mark Cuban",
   "username": "Mark Cuban",
-  "agentRole": {
-    "type": "AGENT",
-    "name": "Alfred",
-    "description": "Bitcoin maximalist"
-  },
-  "environment": {
-    "type": "crypto_debate",
-    "description": "A  discussion room where cryptocurrency advocates debate the merits of their preferred chains",
-    "rules": [
-      "Stay professional but firm in your beliefs",
-      "Use technical arguments to support your position",
-      "Acknowledge but counter opposing viewpoints"
-    ]
-  },
-  "clients": ["auto", "direct"],
-  "modelProvider": "google",
+  "clients": ["discord", "auto", "direct"],
+  "modelProvider": "openai",
   "settings": {
-    "pvpvai": {
+    "aiBetworks": {
       "wsUrl": "ws://localhost:3331/ws",
       "roomId": 17,
       "roundId": 1,
@@ -29,7 +15,7 @@
       "solanaWalletAddress": "Solana000000000000000000000000000473c47f7b9447",
       "creatorId": 1,
       "clientPort": 3001,
-      "pvpvaiServerUrl": "http://localhost:3000",
+      "aiBetworksServerUrl": "http://localhost:3000",
       "investmentStyle": "value",
       "riskTolerance": "moderate",
       "experienceLevel": "intermediate",
